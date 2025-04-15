@@ -13,6 +13,9 @@ import importlib.util
 import signal
 from pathlib import Path
 
+# Add the parent directory to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
 # Load environment variables from .env file if it exists
 dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), '.env')
 if os.path.exists(dotenv_path):
@@ -27,9 +30,81 @@ from PyQt5.QtGui import QIcon, QPixmap, QFont
 from PyQt5.QtCore import Qt
 
 # Import custom modules
-from toolkit.toolbar.core.config import Config, get_config_instance
-from toolkit.toolbar.core.plugin_system import PluginManager, Plugin
-from toolkit.toolbar.ui.toolbar_ui import Toolbar
+# Use try-except for core imports to make the application more robust
+try:
+    from toolkit.toolbar.core.config import Config, get_config_instance
+    from toolkit.toolbar.core.plugin_system import PluginManager, Plugin
+    from toolkit.toolbar.ui.toolbar_ui import Toolbar  # Import the Toolbar class from ui module
+except ImportError as e:
+    # Log the error
+    print(f"Critical import error: {e}")
+    
+    # Define fallback classes if imports fail
+    class Config:
+        def __init__(self):
+            self.settings = {}
+        
+        def get_setting(self, key, default=None):
+            return self.settings.get(key, default)
+        
+        def set_setting(self, key, value):
+            self.settings[key] = value
+        
+        def save(self):
+            pass
+    
+    def get_config_instance():
+        return Config()
+    
+    class Plugin:
+        def initialize(self, config):
+            pass
+        
+        def cleanup(self):
+            pass
+        
+        @property
+        def name(self):
+            return "Fallback Plugin"
+        
+        @property
+        def version(self):
+            return "0.0.0"
+        
+        @property
+        def description(self):
+            return "Fallback plugin when real plugins can't be loaded"
+    
+    class PluginManager:
+        def __init__(self, config):
+            self.config = config
+            self.plugins = {}
+            self.plugin_dirs = []
+            self.failed_plugins = {}
+        
+        def add_plugin_directory(self, directory):
+            if os.path.isdir(directory) and directory not in self.plugin_dirs:
+                self.plugin_dirs.append(directory)
+        
+        def load_plugins(self):
+            pass
+        
+        def get_all_plugins(self):
+            return {}
+        
+        def get_failed_plugins(self):
+            return {}
+        
+        def cleanup(self):
+            pass
+    
+    # Define a fallback Toolbar class if the import fails
+    class Toolbar(QMainWindow):
+        def __init__(self, config, plugin_manager):
+            super().__init__()
+            self.setWindowTitle("Fallback Toolbar")
+            self.config = config
+            self.plugin_manager = plugin_manager
 
 # Set up logging
 logging.basicConfig(

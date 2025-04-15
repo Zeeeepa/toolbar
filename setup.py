@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 setup(
     name="toolkit",
     version="1.0.0",
-    description="A modular toolbar application with plugin support",
+    description="A modular taskbar application with plugin support",
     author="Zeeeepa",
     author_email="info@zeeeepa.com",
     packages=find_packages(),
@@ -17,6 +17,7 @@ setup(
         "keyboard>=0.13.0",
         "pyperclip>=1.8.0",
         "python-dotenv>=0.15.0",
+        "appdirs>=1.4.4",
     ],
     entry_points={
         "console_scripts": [

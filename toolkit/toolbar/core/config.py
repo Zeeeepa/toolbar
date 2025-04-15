@@ -2,83 +2,91 @@
 import os
 import json
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Union
+import appdirs
 
 logger = logging.getLogger(__name__)
 
 # Singleton instance
 _config_instance = None
 
+def get_config_instance():
+    """Get the singleton Config instance."""
+    global _config_instance
+    if _config_instance is None:
+        _config_instance = Config()
+    return _config_instance
+
 class Config:
-    """
-    Configuration manager for the Toolbar application.
-    Handles loading, saving, and accessing configuration settings.
-    """
+    """Configuration manager for the Toolbar application."""
     
     def __init__(self, config_file=None):
-        """
-        Initialize the configuration manager.
-        
-        Args:
-            config_file: Path to the configuration file. If None, uses default location.
-        """
-        self.config_file = config_file or os.path.join(
-            os.path.expanduser("~"), 
-            ".config", 
-            "toolkit", 
-            "config.json"
-        )
+        """Initialize the configuration manager."""
         self.settings = {}
+        
+        # Set default config file path if not provided
+        if config_file is None:
+            config_dir = appdirs.user_config_dir("toolkit", "zeeeepa")
+            os.makedirs(config_dir, exist_ok=True)
+            config_file = os.path.join(config_dir, "config.json")
+        
+        self.config_file = config_file
+        
+        # Load configuration
         self.load()
+        
+        # Set default settings
+        self._set_defaults()
+    
+    def _set_defaults(self):
+        """Set default settings if they don't exist."""
+        defaults = {
+            "ui.theme": "dark",
+            "ui.position": "bottom",
+            "ui.always_on_top": True,
+            "ui.show_clock": True,
+            "ui.show_notifications": True,
+            "ui.taskbar_height": 48,
+            "ui.button_size": 32,
+            "ui.button_spacing": 4,
+            "ui.font_size": 10,
+            "ui.font_family": "Arial",
+            "ui.opacity": 1.0,
+            "ui.auto_hide": False,
+            "ui.auto_hide_delay": 3000,
+            "plugins.enabled": True,
+            "plugins.auto_update": True,
+            "plugins.user_dir": os.path.join(appdirs.user_data_dir("toolkit", "zeeeepa"), "plugins"),
+            "plugins.disabled": [],
+            "system.auto_start": False,
+            "system.check_updates": True,
+            "system.update_interval": 86400,  # 24 hours in seconds
+            "system.log_level": "INFO",
+            "system.log_file": os.path.join(appdirs.user_log_dir("toolkit", "zeeeepa"), "toolkit.log"),
+            "system.debug_mode": False,
+            "apps.favorites": [],
+            "apps.recent": [],
+            "apps.max_recent": 10,
+        }
+        
+        # Set defaults for any missing settings
+        for key, value in defaults.items():
+            if not self.has_setting(key):
+                self.set_setting(key, value)
     
     def load(self):
         """Load configuration from file."""
         try:
-            # Create directory if it doesn't exist
-            os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
-            
-            # Load configuration if file exists
             if os.path.exists(self.config_file):
                 with open(self.config_file, "r") as f:
                     self.settings = json.load(f)
                 logger.info(f"Configuration loaded from {self.config_file}")
             else:
-                # Create default configuration
-                self.settings = {
-                    "auto_start": False,
-                    "minimize_to_tray": True,
-                    "plugins": {
-                        "enabled": [],
-                        "disabled": []
-                    },
-                    "github": {
-                        "token": "",
-                        "username": "",
-                        "repositories": []
-                    },
-                    "linear": {
-                        "api_key": "",
-                        "team_id": ""
-                    },
-                    "ui": {
-                        "theme": "system",
-                        "font_size": 12,
-                        "toolbar_position": "top"
-                    }
-                }
-                self.save()
-                logger.info(f"Default configuration created at {self.config_file}")
+                logger.info(f"Configuration file {self.config_file} not found, using defaults")
+                self.settings = {}
         except Exception as e:
             logger.error(f"Error loading configuration: {e}", exc_info=True)
-            # Use default configuration
-            self.settings = {
-                "auto_start": False,
-                "minimize_to_tray": True,
-                "plugins": {
-                    "enabled": [],
-                    "disabled": []
-                }
-            }
+            self.settings = {}
     
     def save(self):
         """Save configuration to file."""
@@ -86,218 +94,193 @@ class Config:
             # Create directory if it doesn't exist
             os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
             
-            # Save configuration
             with open(self.config_file, "w") as f:
                 json.dump(self.settings, f, indent=4)
+            
             logger.info(f"Configuration saved to {self.config_file}")
+            return True
         except Exception as e:
             logger.error(f"Error saving configuration: {e}", exc_info=True)
+            return False
     
     def get_setting(self, key, default=None):
         """
-        Get a configuration setting.
+        Get a setting value.
         
         Args:
-            key: Setting key (can use dot notation for nested settings)
+            key: Setting key (dot-separated path)
             default: Default value if setting doesn't exist
         
         Returns:
             Setting value or default
         """
-        try:
-            # Handle nested settings with dot notation
-            if "." in key:
-                parts = key.split(".")
-                value = self.settings
-                for part in parts:
-                    if part not in value:
-                        return default
-                    value = value[part]
-                return value
+        # Handle dot notation (e.g., "ui.theme")
+        if "." in key:
+            parts = key.split(".")
+            current = self.settings
             
-            # Handle simple settings
-            return self.settings.get(key, default)
-        except Exception as e:
-            logger.error(f"Error getting setting {key}: {e}", exc_info=True)
-            return default
+            for part in parts[:-1]:
+                if part not in current or not isinstance(current[part], dict):
+                    return default
+                current = current[part]
+            
+            return current.get(parts[-1], default)
+        
+        return self.settings.get(key, default)
     
     def set_setting(self, key, value):
         """
-        Set a configuration setting.
+        Set a setting value.
         
         Args:
-            key: Setting key (can use dot notation for nested settings)
+            key: Setting key (dot-separated path)
             value: Setting value
         """
-        try:
-            # Handle nested settings with dot notation
-            if "." in key:
-                parts = key.split(".")
-                target = self.settings
-                for part in parts[:-1]:
-                    if part not in target:
-                        target[part] = {}
-                    target = target[part]
-                target[parts[-1]] = value
-            else:
-                # Handle simple settings
-                self.settings[key] = value
+        # Handle dot notation (e.g., "ui.theme")
+        if "." in key:
+            parts = key.split(".")
+            current = self.settings
             
-            # Save configuration
-            self.save()
-        except Exception as e:
-            logger.error(f"Error setting {key} to {value}: {e}", exc_info=True)
+            for part in parts[:-1]:
+                if part not in current:
+                    current[part] = {}
+                elif not isinstance(current[part], dict):
+                    current[part] = {}
+                
+                current = current[part]
+            
+            current[parts[-1]] = value
+        else:
+            self.settings[key] = value
     
-    def get_plugin_setting(self, plugin_name, key, default=None):
+    def has_setting(self, key):
         """
-        Get a plugin-specific setting.
+        Check if a setting exists.
         
         Args:
-            plugin_name: Name of the plugin
-            key: Setting key
-            default: Default value if setting doesn't exist
+            key: Setting key (dot-separated path)
         
         Returns:
-            Setting value or default
+            True if setting exists, False otherwise
         """
-        try:
-            # Get plugin settings
-            plugin_settings = self.settings.get("plugins", {}).get(plugin_name, {})
+        # Handle dot notation (e.g., "ui.theme")
+        if "." in key:
+            parts = key.split(".")
+            current = self.settings
             
-            # Return setting or default
-            return plugin_settings.get(key, default)
-        except Exception as e:
-            logger.error(f"Error getting plugin setting {plugin_name}.{key}: {e}", exc_info=True)
-            return default
+            for part in parts[:-1]:
+                if part not in current or not isinstance(current[part], dict):
+                    return False
+                current = current[part]
+            
+            return parts[-1] in current
+        
+        return key in self.settings
     
-    def set_plugin_setting(self, plugin_name, key, value):
+    def delete_setting(self, key):
         """
-        Set a plugin-specific setting.
+        Delete a setting.
         
         Args:
-            plugin_name: Name of the plugin
-            key: Setting key
-            value: Setting value
-        """
-        try:
-            # Ensure plugins section exists
-            if "plugins" not in self.settings:
-                self.settings["plugins"] = {}
-            
-            # Ensure plugin section exists
-            if plugin_name not in self.settings["plugins"]:
-                self.settings["plugins"][plugin_name] = {}
-            
-            # Set setting
-            self.settings["plugins"][plugin_name][key] = value
-            
-            # Save configuration
-            self.save()
-        except Exception as e:
-            logger.error(f"Error setting plugin setting {plugin_name}.{key} to {value}: {e}", exc_info=True)
-    
-    def is_plugin_enabled(self, plugin_name):
-        """
-        Check if a plugin is enabled.
-        
-        Args:
-            plugin_name: Name of the plugin
+            key: Setting key (dot-separated path)
         
         Returns:
-            True if plugin is enabled, False otherwise
+            True if setting was deleted, False otherwise
         """
-        try:
-            # Get enabled and disabled plugins
-            enabled = self.settings.get("plugins", {}).get("enabled", [])
-            disabled = self.settings.get("plugins", {}).get("disabled", [])
+        # Handle dot notation (e.g., "ui.theme")
+        if "." in key:
+            parts = key.split(".")
+            current = self.settings
             
-            # Check if plugin is explicitly enabled or disabled
-            if plugin_name in enabled:
+            for part in parts[:-1]:
+                if part not in current or not isinstance(current[part], dict):
+                    return False
+                current = current[part]
+            
+            if parts[-1] in current:
+                del current[parts[-1]]
                 return True
-            if plugin_name in disabled:
-                return False
             
-            # Default to enabled
+            return False
+        
+        if key in self.settings:
+            del self.settings[key]
             return True
-        except Exception as e:
-            logger.error(f"Error checking if plugin {plugin_name} is enabled: {e}", exc_info=True)
-            return True
+        
+        return False
     
-    def enable_plugin(self, plugin_name):
+    def get_all_settings(self):
         """
-        Enable a plugin.
+        Get all settings.
+        
+        Returns:
+            Dictionary of all settings
+        """
+        return self.settings.copy()
+    
+    def add_favorite_app(self, app_info):
+        """
+        Add an application to favorites.
         
         Args:
-            plugin_name: Name of the plugin
+            app_info: Dictionary with app information (name, path, icon, args)
         """
-        try:
-            # Ensure plugins section exists
-            if "plugins" not in self.settings:
-                self.settings["plugins"] = {}
-            
-            # Ensure enabled and disabled lists exist
-            if "enabled" not in self.settings["plugins"]:
-                self.settings["plugins"]["enabled"] = []
-            if "disabled" not in self.settings["plugins"]:
-                self.settings["plugins"]["disabled"] = []
-            
-            # Enable plugin
-            if plugin_name not in self.settings["plugins"]["enabled"]:
-                self.settings["plugins"]["enabled"].append(plugin_name)
-            
-            # Remove from disabled list
-            if plugin_name in self.settings["plugins"]["disabled"]:
-                self.settings["plugins"]["disabled"].remove(plugin_name)
-            
-            # Save configuration
-            self.save()
-        except Exception as e:
-            logger.error(f"Error enabling plugin {plugin_name}: {e}", exc_info=True)
+        favorites = self.get_setting("apps.favorites", [])
+        
+        # Check if app is already in favorites
+        for i, app in enumerate(favorites):
+            if app.get("path") == app_info.get("path"):
+                # Update existing app
+                favorites[i] = app_info
+                self.set_setting("apps.favorites", favorites)
+                return
+        
+        # Add new app
+        favorites.append(app_info)
+        self.set_setting("apps.favorites", favorites)
     
-    def disable_plugin(self, plugin_name):
+    def remove_favorite_app(self, app_path):
         """
-        Disable a plugin.
+        Remove an application from favorites.
         
         Args:
-            plugin_name: Name of the plugin
+            app_path: Path of the application to remove
+        
+        Returns:
+            True if app was removed, False otherwise
         """
-        try:
-            # Ensure plugins section exists
-            if "plugins" not in self.settings:
-                self.settings["plugins"] = {}
-            
-            # Ensure enabled and disabled lists exist
-            if "enabled" not in self.settings["plugins"]:
-                self.settings["plugins"]["enabled"] = []
-            if "disabled" not in self.settings["plugins"]:
-                self.settings["plugins"]["disabled"] = []
-            
-            # Disable plugin
-            if plugin_name not in self.settings["plugins"]["disabled"]:
-                self.settings["plugins"]["disabled"].append(plugin_name)
-            
-            # Remove from enabled list
-            if plugin_name in self.settings["plugins"]["enabled"]:
-                self.settings["plugins"]["enabled"].remove(plugin_name)
-            
-            # Save configuration
-            self.save()
-        except Exception as e:
-            logger.error(f"Error disabling plugin {plugin_name}: {e}", exc_info=True)
-
-def get_config_instance(config_file=None):
-    """
-    Get the singleton configuration instance.
+        favorites = self.get_setting("apps.favorites", [])
+        
+        for i, app in enumerate(favorites):
+            if app.get("path") == app_path:
+                favorites.pop(i)
+                self.set_setting("apps.favorites", favorites)
+                return True
+        
+        return False
     
-    Args:
-        config_file: Path to the configuration file. If None, uses default location.
+    def add_recent_app(self, app_info):
+        """
+        Add an application to recent apps.
+        
+        Args:
+            app_info: Dictionary with app information (name, path, icon, args)
+        """
+        recent = self.get_setting("apps.recent", [])
+        max_recent = self.get_setting("apps.max_recent", 10)
+        
+        # Remove app if already in recent list
+        recent = [app for app in recent if app.get("path") != app_info.get("path")]
+        
+        # Add app to beginning of list
+        recent.insert(0, app_info)
+        
+        # Trim list if needed
+        if len(recent) > max_recent:
+            recent = recent[:max_recent]
+        
+        self.set_setting("apps.recent", recent)
     
-    Returns:
-        Configuration instance
-    """
-    global _config_instance
-    
-    if _config_instance is None:
-        _config_instance = Config(config_file)
-    
-    return _config_instance
+    def clear_recent_apps(self):
+        """Clear the recent apps list."""
+        self.set_setting("apps.recent", [])
