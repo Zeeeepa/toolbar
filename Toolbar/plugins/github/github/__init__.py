@@ -5,11 +5,11 @@ handling webhooks, and managing notifications.
 """
 
 # Import from local modules
-from Toolbar.core.github.models import GitHubProject, GitHubNotification
-from Toolbar.core.github.ngrok_manager import NgrokManager
-from Toolbar.core.github.webhook_handler import WebhookHandler
-from Toolbar.core.github.webhook_manager import WebhookManager
-from Toolbar.core.github.monitor import GitHubMonitor
+from Toolbar.plugins.github.github.models import GitHubProject, GitHubNotification
+from Toolbar.plugins.github.github.ngrok_manager import NgrokManager
+from Toolbar.plugins.github.github.webhook_handler import WebhookHandler
+from Toolbar.plugins.github.github.webhook_manager import WebhookManager
+from Toolbar.plugins.github.github.monitor import GitHubMonitor
 
 # Export all the necessary classes
 __all__ = [
