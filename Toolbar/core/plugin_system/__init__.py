@@ -81,22 +81,36 @@ class PluginManager:
             plugin_name: Name of the plugin to disable
             
         Returns:
-            bool: True if the plugin was disabled, False otherwise
+            bool: True if successful, False otherwise
         """
-        if plugin_name not in self.disabled_plugins:
-            self.disabled_plugins.append(plugin_name)
-            self._save_disabled_plugins()
-            
-            # If the plugin is currently loaded, unload it
-            if plugin_name in self.plugins:
-                plugin = self.plugins.pop(plugin_name)
-                try:
-                    plugin.cleanup()
-                except Exception as e:
-                    logger.error(f"Error cleaning up plugin {plugin_name}: {e}", exc_info=True)
-            
-            return True
-        return False
+        try:
+            # Add to disabled plugins list
+            disabled_plugins = self.config.get_setting("disabled_plugins", [])
+            if plugin_name not in disabled_plugins:
+                disabled_plugins.append(plugin_name)
+                self.config.set_setting("disabled_plugins", disabled_plugins)
+                
+                # Remove from failed plugins if present
+                if plugin_name in self.failed_plugins:
+                    del self.failed_plugins[plugin_name]
+                
+                # Remove from loaded plugins if present
+                if plugin_name in self.plugins:
+                    # Clean up plugin
+                    try:
+                        self.plugins[plugin_name].cleanup()
+                    except Exception as e:
+                        logger.error(f"Error cleaning up plugin {plugin_name}: {e}", exc_info=True)
+                    
+                    # Remove plugin
+                    del self.plugins[plugin_name]
+                
+                logger.info(f"Plugin {plugin_name} disabled")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error disabling plugin {plugin_name}: {e}", exc_info=True)
+            return False
     
     def enable_plugin(self, plugin_name: str) -> bool:
         """
@@ -106,13 +120,24 @@ class PluginManager:
             plugin_name: Name of the plugin to enable
             
         Returns:
-            bool: True if the plugin was enabled, False otherwise
+            bool: True if successful, False otherwise
         """
-        if plugin_name in self.disabled_plugins:
-            self.disabled_plugins.remove(plugin_name)
-            self._save_disabled_plugins()
-            return True
-        return False
+        try:
+            # Remove from disabled plugins list
+            disabled_plugins = self.config.get_setting("disabled_plugins", [])
+            if plugin_name in disabled_plugins:
+                disabled_plugins.remove(plugin_name)
+                self.config.set_setting("disabled_plugins", disabled_plugins)
+                
+                # Try to load the plugin
+                self._load_plugin_by_name(plugin_name)
+                
+                logger.info(f"Plugin {plugin_name} enabled")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error enabling plugin {plugin_name}: {e}", exc_info=True)
+            return False
     
     def is_plugin_disabled(self, plugin_name: str) -> bool:
         """
@@ -301,8 +326,13 @@ class PluginManager:
         return self.plugins.get(name)
     
     def get_all_plugins(self) -> Dict[str, Plugin]:
-        """Get all loaded plugins."""
-        return self.plugins.copy()
+        """
+        Get all loaded plugins.
+        
+        Returns:
+            dict: Dictionary of plugin names to plugin instances
+        """
+        return self.plugins
     
     def get_failed_plugins(self) -> Dict[str, str]:
         """Get all plugins that failed to load and their error messages."""
@@ -321,3 +351,54 @@ class PluginManager:
             except Exception as e:
                 logger.error(f"Error cleaning up plugin {plugin_name}: {e}", exc_info=True)
         self.plugins.clear()
+    
+    def _load_plugin_by_name(self, plugin_name: str):
+        """
+        Load a plugin by name.
+        
+        Args:
+            plugin_name (str): Name of the plugin to load
+        
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # Find plugin module
+            for plugin_dir in self.plugin_dirs:
+                plugin_path = os.path.join(plugin_dir, plugin_name.lower())
+                if os.path.isdir(plugin_path):
+                    # Try to load the plugin
+                    try:
+                        # Import the plugin module
+                        sys.path.insert(0, os.path.dirname(plugin_path))
+                        module_name = f"Toolbar.plugins.{plugin_name.lower()}"
+                        module = importlib.import_module(module_name)
+                        
+                        # Get the plugin class
+                        plugin_class_name = f"{plugin_name}"
+                        if not hasattr(module, plugin_class_name):
+                            raise ImportError(f"Plugin class {plugin_class_name} not found in module {module_name}")
+                        
+                        plugin_class = getattr(module, plugin_class_name)
+                        
+                        # Create plugin instance
+                        plugin = plugin_class()
+                        
+                        # Initialize plugin
+                        plugin.initialize(self.config)
+                        
+                        # Add to plugins dictionary
+                        self.plugins[plugin_name] = plugin
+                        
+                        logger.info(f"Successfully loaded plugin: {plugin.name} v{plugin.version}")
+                        return True
+                    except Exception as e:
+                        logger.error(f"Failed to load plugin {plugin_name}: {e}", exc_info=True)
+                        self.failed_plugins[plugin_name] = str(e)
+                        return False
+            
+            logger.error(f"Plugin {plugin_name} not found")
+            return False
+        except Exception as e:
+            logger.error(f"Error loading plugin {plugin_name}: {e}", exc_info=True)
+            return False

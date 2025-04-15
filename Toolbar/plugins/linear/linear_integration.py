@@ -2,10 +2,14 @@ import os
 import json
 import requests
 import warnings
+import logging
 from PyQt5.QtCore import QObject, pyqtSignal
 
 # Suppress PyQt5 deprecation warnings
 warnings.filterwarnings("ignore", message=".*sipPyTypeDict.*")
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 class LinearIssue:
     """
@@ -443,11 +447,22 @@ class LinearIntegration(QObject):
         Clean up resources used by the Linear integration.
         This method is called when the plugin is being unloaded.
         """
-        # Save any pending settings
         try:
-            self.save_settings()
-        except Exception as e:
-            warnings.warn(f"Failed to save Linear settings during cleanup: {str(e)}")
+            # Close any open connections or resources
+            logger.info("Cleaning up Linear integration")
             
-        # Close any open connections or resources
-        # Currently, there are no persistent connections to close
+            # Clear any cached data
+            self.issues = {}
+            self.teams = {}
+            self.projects = {}
+            
+            # Cancel any pending operations
+            if hasattr(self, 'pending_operations'):
+                for op in self.pending_operations:
+                    if hasattr(op, 'cancel') and callable(op.cancel):
+                        op.cancel()
+                self.pending_operations = []
+            
+            logger.info("Linear integration cleanup completed")
+        except Exception as e:
+            logger.error(f"Error during Linear integration cleanup: {e}", exc_info=True)

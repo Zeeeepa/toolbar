@@ -397,99 +397,21 @@ def exception_hook(exc_type, exc_value, exc_traceback):
         f"An unexpected error occurred:\n\n{str(exc_value)}\n\nPlease check the log file for details."
     )
 
-def main():
-    """Main application entry point."""
-    # Set up global exception handler
-    sys.excepthook = exception_hook
-    
-    logger.info("Starting Toolbar application")
-    
-    app = QApplication(sys.argv)
-    
-    try:
-        # Initialize configuration
-        config = get_config_instance()
-        logger.info("Configuration loaded")
-        
-        # Initialize plugin manager
-        global plugin_manager
-        plugin_manager = PluginManager(config)
-        
-        # Add plugin directories
-        plugin_manager.add_plugin_directory(os.path.join(os.path.dirname(__file__), "plugins"))
-        
-        # Load plugins with error handling
-        try:
-            plugin_manager.load_plugins()
-            logger.info("Plugins loaded")
-            
-            # Check for failed plugins
-            failed_plugins = plugin_manager.get_failed_plugins()
-            if failed_plugins:
-                logger.warning(f"Some plugins failed to load: {failed_plugins}")
-                
-                # Show error dialog
-                error_dialog = PluginErrorDialog(failed_plugins)
-                error_dialog.exec_()
-        except Exception as e:
-            logger.error(f"Error loading plugins: {e}", exc_info=True)
-            # Continue execution even if plugins fail to load
-            QMessageBox.warning(
-                None,
-                "Plugin Loading Error",
-                f"Error loading plugins: {str(e)}\n\nThe application will continue with limited functionality."
-            )
-        
-        # Import ScriptToolbar here to avoid circular imports
-        try:
-            from Toolbar.plugins.automationmanager.ui.script_toolbar_ui import ScriptToolbar
-            # Create and show the toolbar
-            toolbar = ScriptToolbar(config, plugin_manager)
-            
-            # First show attempt
-            logger.info("Showing toolbar window")
-            toolbar.show()
-            
-            # Force visibility with raise and activate
-            toolbar.raise_()
-            toolbar.activateWindow()
-            
-            # Wait a bit and show again to ensure visibility
-            QTimer.singleShot(500, lambda: force_show_toolbar(toolbar))
-            
-            logger.info("Toolbar UI initialized and displayed")
-            
-            # Store the toolbar instance globally
-            global toolbar_instance
-            toolbar_instance = toolbar
-        except Exception as e:
-            logger.error(f"Failed to initialize toolbar UI: {e}", exc_info=True)
-            
-            # Create a fallback UI
-            fallback = FallbackToolbar(config, plugin_manager, f"Failed to initialize toolbar UI: {str(e)}")
-            fallback.show()
-            
-            # Store the fallback instance globally
-            global toolbar_instance
-            toolbar_instance = fallback
-        
-        # Start the application event loop
-        return app.exec_()
-    except Exception as e:
-        logger.error(f"Failed to initialize application: {e}", exc_info=True)
-        QMessageBox.critical(
-            None,
-            "Initialization Error",
-            f"Failed to initialize application: {str(e)}"
-        )
-        return 1
-    finally:
-        # Clean up plugins
-        if plugin_manager:
-            try:
-                plugin_manager.cleanup()
-            except Exception as e:
-                logger.error(f"Error during plugin cleanup: {e}", exc_info=True)
+def setup_logging():
+    """Set up logging configuration."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[
+            logging.FileHandler("toolbar.log"),
+            logging.StreamHandler()
+        ]
+    )
+    logger = logging.getLogger(__name__)
+
+def show_error_dialog(title, message):
+    """Show a message box with an error message."""
+    QMessageBox.critical(None, title, message)
 
 def force_show_toolbar(toolbar):
     """Force the toolbar to be visible by showing and raising it again."""
@@ -507,6 +429,73 @@ def force_show_toolbar(toolbar):
         logger.info(f"Toolbar position after force show: {toolbar.geometry().x()}, {toolbar.geometry().y()}, {toolbar.width()}x{toolbar.height()}")
     except Exception as e:
         logger.error(f"Error in force_show_toolbar: {e}", exc_info=True)
+
+def main():
+    """
+    Main entry point for the Toolbar application.
+    Initializes the application, loads configuration, and starts the UI.
+    """
+    try:
+        # Initialize global variable at the beginning of the function
+        global toolbar_instance
+        toolbar_instance = None
+        
+        # Configure logging
+        setup_logging()
+        logger.info("Starting Toolbar application")
+        
+        # Create QApplication instance
+        app = QApplication(sys.argv)
+        app.setQuitOnLastWindowClosed(False)
+        
+        # Load configuration
+        try:
+            config = get_config_instance()
+            logger.info("Configuration loaded")
+        except Exception as e:
+            logger.error(f"Failed to load configuration: {e}", exc_info=True)
+            show_error_dialog("Configuration Error", f"Failed to load configuration: {str(e)}")
+            return 1
+        
+        # Initialize plugin manager
+        try:
+            plugin_manager = PluginManager(config)
+            plugin_manager.load_plugins()
+            logger.info("Plugins loaded")
+        except Exception as e:
+            logger.error(f"Failed to initialize plugin manager: {e}", exc_info=True)
+            show_error_dialog("Plugin Error", f"Failed to initialize plugin manager: {str(e)}")
+            return 1
+        
+        # Initialize and show the toolbar UI
+        try:
+            # Create the toolbar
+            toolbar = Toolbar(config, plugin_manager)
+            toolbar.show()
+            
+            # Force the toolbar to show after a short delay
+            QTimer.singleShot(500, lambda: force_show_toolbar(toolbar))
+            
+            logger.info("Toolbar UI initialized and displayed")
+            
+            # Store the toolbar instance globally
+            toolbar_instance = toolbar
+        except Exception as e:
+            logger.error(f"Failed to initialize toolbar UI: {e}", exc_info=True)
+            
+            # Create a fallback UI
+            fallback = FallbackToolbar(config, plugin_manager, f"Failed to initialize toolbar UI: {str(e)}")
+            fallback.show()
+            
+            # Store the fallback instance globally
+            toolbar_instance = fallback
+        
+        # Start the application event loop
+        return app.exec_()
+    except Exception as e:
+        logger.error(f"Unhandled exception in main: {e}", exc_info=True)
+        show_error_dialog("Critical Error", f"An unhandled exception occurred: {str(e)}")
+        return 1
 
 if __name__ == "__main__":
     sys.exit(main())
