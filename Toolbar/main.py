@@ -32,9 +32,9 @@ from PyQt5.QtCore import Qt
 # Import custom modules
 # Use try-except for core imports to make the application more robust
 try:
-    from toolkit.toolbar.core.config import Config, get_config_instance
-    from toolkit.toolbar.core.plugin_system import PluginManager, Plugin
-    from toolkit.toolbar.ui.toolbar_ui import Toolbar  # Import the Toolbar class from ui module
+    from Toolbar.core.config import Config, get_config_instance
+    from Toolbar.core.plugin_system import PluginManager, Plugin, PluginType, PluginState
+    from Toolbar.ui.toolbar_ui import ToolbarUI  # Import the ToolbarUI class from ui module
 except ImportError as e:
     # Log the error
     print(f"Critical import error: {e}")
@@ -98,8 +98,24 @@ except ImportError as e:
         def cleanup(self):
             pass
     
-    # Define a fallback Toolbar class if the import fails
-    class Toolbar(QMainWindow):
+    # Define fallback enums
+    class PluginType:
+        CORE = "core"
+        UI = "ui"
+        INTEGRATION = "integration"
+        AUTOMATION = "automation"
+        UTILITY = "utility"
+        OTHER = "other"
+    
+    class PluginState:
+        UNLOADED = "unloaded"
+        LOADED = "loaded"
+        ACTIVATED = "activated"
+        DEACTIVATED = "deactivated"
+        ERROR = "error"
+    
+    # Define fallback ToolbarUI class if the import fails
+    class ToolbarUI(QMainWindow):
         def __init__(self, config, plugin_manager):
             super().__init__()
             self.setWindowTitle("Fallback Toolbar")
@@ -485,7 +501,12 @@ def main():
         # Initialize and show the toolbar UI
         try:
             # Create the toolbar
-            toolbar = Toolbar(config, plugin_manager)
+            toolbar = ToolbarUI(config, plugin_manager)
+            
+            # Set the toolbar instance in the plugin manager
+            plugin_manager.set_toolbar(toolbar)
+            
+            # Show the toolbar
             toolbar.show()
             
             # Force the toolbar to show after a short delay

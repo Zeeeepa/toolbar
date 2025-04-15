@@ -9,7 +9,8 @@ from PyQt5.QtWidgets import (
     QMessageBox, QLabel, QWidget, QHBoxLayout, QVBoxLayout, QShortcut, 
     QDesktopWidget, QToolButton, QApplication, QSizePolicy, QPushButton,
     QTabWidget, QSplitter, QTreeView, QListWidget, QListWidgetItem, QDialog,
-    QLineEdit, QComboBox, QCheckBox, QGroupBox, QScrollArea, QTextEdit
+    QLineEdit, QComboBox, QCheckBox, QGroupBox, QScrollArea, QTextEdit,
+    QSystemTrayIcon
 )
 from PyQt5.QtGui import QIcon, QCursor, QKeySequence, QColor, QPalette, QStandardItemModel, QStandardItem
 from PyQt5.QtCore import Qt, QSize, pyqtSignal, QTimer, QModelIndex, QRect
@@ -17,14 +18,77 @@ from PyQt5.QtCore import Qt, QSize, pyqtSignal, QTimer, QModelIndex, QRect
 # Import from Toolbar modules
 from Toolbar.ui.toolbar_settings import ToolbarSettingsDialog
 from Toolbar.ui.notification_widget import NotificationWidget
+from Toolbar.core.plugin_system import PluginType, PluginState, Plugin
 
 logger = logging.getLogger(__name__)
 
-class Toolbar(QMainWindow):
+class PluginButton(QToolButton):
+    """Custom button for plugins in the toolbar."""
+    
+    def __init__(self, plugin, parent=None):
+        super().__init__(parent)
+        self.plugin = plugin
+        self.setIcon(plugin.get_icon())
+        self.setToolTip(f"{plugin.name} v{plugin.version}")
+        self.setText(plugin.get_title())
+        self.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        self.clicked.connect(self._on_clicked)
+        
+        # Set size policy
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        
+        # Set fixed size
+        self.setIconSize(QSize(32, 32))
+        self.setFixedSize(QSize(64, 64))
+    
+    def _on_clicked(self):
+        """Handle button click."""
+        try:
+            # Call the plugin's activate method
+            if hasattr(self.plugin, "activate"):
+                self.plugin.activate()
+        except Exception as e:
+            logger.error(f"Error activating plugin {self.plugin.name}: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Plugin Error",
+                f"Error activating plugin {self.plugin.name}: {str(e)}"
+            )
+
+class PluginSettingsDialog(QDialog):
+    """Dialog for plugin settings."""
+    
+    def __init__(self, plugin, parent=None):
+        super().__init__(parent)
+        self.plugin = plugin
+        self.setWindowTitle(f"{plugin.name} Settings")
+        self.setMinimumWidth(500)
+        self.setMinimumHeight(400)
+        
+        # Create layout
+        layout = QVBoxLayout(self)
+        
+        # Get plugin settings UI
+        settings_ui = plugin.get_settings_ui()
+        if settings_ui:
+            layout.addWidget(settings_ui)
+        else:
+            # Create a default settings UI
+            layout.addWidget(QLabel(f"No settings available for {plugin.name}"))
+        
+        # Add buttons
+        buttons_layout = QHBoxLayout()
+        layout.addLayout(buttons_layout)
+        
+        # Add close button
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(self.accept)
+        buttons_layout.addWidget(close_button)
+
+class ToolbarUI(QMainWindow):
     """
-    Main toolbar window with enhanced GitHub project management.
-    This class provides a robust interface that continues to function
-    even if some plugins fail to load.
+    Enhanced toolbar window with plugin management.
+    This class provides a robust interface for the toolbar application.
     """
     
     def __init__(self, config, plugin_manager, parent=None):
@@ -39,19 +103,17 @@ class Toolbar(QMainWindow):
         super().__init__(parent)
         self.config = config
         self.plugin_manager = plugin_manager
-        self.plugins = {}
-        self.plugin_uis = {}
-        self.github_ui = None
-        self.github_projects_dialog = None
-        self.linear_ui = None
+        self.plugin_buttons = {}
+        self.plugin_menus = {}
+        self.tray_icon = None
         
         # Set window properties
         self.setWindowTitle("Toolbar")
         
         # Get position and opacity from config
-        self.position = self.config.get('ui', 'position', 'top')
-        self.opacity = float(self.config.get('ui', 'opacity', 0.9))
-        self.stay_on_top = self.config.get('ui', 'stay_on_top', True)
+        self.position = self.config.get_setting("ui.position", "top")
+        self.opacity = float(self.config.get_setting("ui.opacity", 0.9))
+        self.stay_on_top = self.config.get_setting("ui.stay_on_top", True)
         
         # Set window flags based on configuration
         self._update_window_flags()
@@ -97,6 +159,10 @@ class Toolbar(QMainWindow):
         self.auto_save_timer.timeout.connect(self._auto_save)
         self.auto_save_timer.start(60000)  # Save every minute
         
+        # Create system tray icon if enabled
+        if self.config.get_setting("ui.minimize_to_tray", True):
+            self._create_tray_icon()
+        
         logger.info("Toolbar initialized")
     
     def _update_window_flags(self):
@@ -125,431 +191,103 @@ class Toolbar(QMainWindow):
     def _init_ui(self):
         """Initialize the UI components."""
         try:
-            # Create main tab widget
-            self.tab_widget = QTabWidget()
+            # Create plugin container
+            self.plugin_container = QWidget()
+            self.plugin_layout = QHBoxLayout(self.plugin_container)
+            self.plugin_layout.setContentsMargins(2, 2, 2, 2)
+            self.plugin_layout.setSpacing(4)
             
-            # Set tab position based on toolbar position
-            if self.position == 'bottom':
-                self.tab_widget.setTabPosition(QTabWidget.South)
-            elif self.position == 'left':
-                self.tab_widget.setTabPosition(QTabWidget.West)
-            elif self.position == 'right':
-                self.tab_widget.setTabPosition(QTabWidget.East)
-            else:  # default to top
-                self.tab_widget.setTabPosition(QTabWidget.North)
+            # Add plugin container to main layout
+            self.main_layout.addWidget(self.plugin_container)
             
-            self.main_layout.addWidget(self.tab_widget)
-            
-            # Create GitHub tab
-            self.github_tab = QWidget()
-            self.github_layout = QVBoxLayout(self.github_tab)
-            self.tab_widget.addTab(self.github_tab, "GitHub")
-            
-            # Create GitHub toolbar
-            self.github_toolbar = QToolBar()
-            self.github_layout.addWidget(self.github_toolbar)
-            
-            # Add GitHub actions
-            self.refresh_action = QAction(QIcon.fromTheme("view-refresh"), "Refresh", self)
-            self.refresh_action.triggered.connect(self._refresh_github)
-            self.github_toolbar.addAction(self.refresh_action)
-            
-            self.new_pr_action = QAction(QIcon.fromTheme("document-new"), "New PR", self)
-            self.new_pr_action.triggered.connect(self._create_new_pr)
-            self.github_toolbar.addAction(self.new_pr_action)
-            
-            self.view_prs_action = QAction(QIcon.fromTheme("document-open"), "View PRs", self)
-            self.view_prs_action.triggered.connect(self._view_prs)
-            self.github_toolbar.addAction(self.view_prs_action)
-            
-            self.new_branch_action = QAction(QIcon.fromTheme("document-new"), "New Branch", self)
-            self.new_branch_action.triggered.connect(self._create_new_branch)
-            self.github_toolbar.addAction(self.new_branch_action)
-            
-            self.github_toolbar.addSeparator()
-            
+            # Create settings button
             self.settings_action = QAction(QIcon.fromTheme("preferences-system"), "Settings", self)
             self.settings_action.triggered.connect(self._show_settings)
-            self.github_toolbar.addAction(self.settings_action)
+            self.toolbar.addAction(self.settings_action)
             
-            # Create GitHub content area
-            self.github_content = QSplitter(Qt.Horizontal)
-            self.github_layout.addWidget(self.github_content)
+            # Create plugin manager button
+            self.plugin_manager_action = QAction(QIcon.fromTheme("system-software-install"), "Plugins", self)
+            self.plugin_manager_action.triggered.connect(self._show_plugin_manager)
+            self.toolbar.addAction(self.plugin_manager_action)
             
-            # Create repository tree view
-            self.repo_tree = QTreeView()
-            self.repo_model = QStandardItemModel()
-            self.repo_model.setHorizontalHeaderLabels(["Repositories"])
-            self.repo_tree.setModel(self.repo_model)
-            self.github_content.addWidget(self.repo_tree)
-            
-            # Create PR list view
-            self.pr_list = QListWidget()
-            self.github_content.addWidget(self.pr_list)
-            
-            # Create PR details view
-            self.pr_details = QTextEdit()
-            self.pr_details.setReadOnly(True)
-            self.github_content.addWidget(self.pr_details)
-            
-            # Set splitter sizes
-            self.github_content.setSizes([200, 300, 500])
-            
-            # Create Linear tab
-            self.linear_tab = QWidget()
-            self.linear_layout = QVBoxLayout(self.linear_tab)
-            self.tab_widget.addTab(self.linear_tab, "Linear")
-            
-            # Create Linear toolbar
-            self.linear_toolbar = QToolBar()
-            self.linear_layout.addWidget(self.linear_toolbar)
-            
-            # Add Linear actions
-            self.refresh_linear_action = QAction(QIcon.fromTheme("view-refresh"), "Refresh", self)
-            self.refresh_linear_action.triggered.connect(self._refresh_linear)
-            self.linear_toolbar.addAction(self.refresh_linear_action)
-            
-            self.new_issue_action = QAction(QIcon.fromTheme("document-new"), "New Issue", self)
-            self.new_issue_action.triggered.connect(self._create_new_issue)
-            self.linear_toolbar.addAction(self.new_issue_action)
-            
-            self.view_issues_action = QAction(QIcon.fromTheme("document-open"), "View Issues", self)
-            self.view_issues_action.triggered.connect(self._view_issues)
-            self.linear_toolbar.addAction(self.view_issues_action)
-            
-            self.linear_toolbar.addSeparator()
-            
-            self.linear_settings_action = QAction(QIcon.fromTheme("preferences-system"), "Settings", self)
-            self.linear_settings_action.triggered.connect(self._show_linear_settings)
-            self.linear_toolbar.addAction(self.linear_settings_action)
-            
-            # Create Linear content area
-            self.linear_content = QSplitter(Qt.Horizontal)
-            self.linear_layout.addWidget(self.linear_content)
-            
-            # Create team/project tree view
-            self.team_tree = QTreeView()
-            self.team_model = QStandardItemModel()
-            self.team_model.setHorizontalHeaderLabels(["Teams & Projects"])
-            self.team_tree.setModel(self.team_model)
-            self.linear_content.addWidget(self.team_tree)
-            
-            # Create issue list view
-            self.issue_list = QListWidget()
-            self.linear_content.addWidget(self.issue_list)
-            
-            # Create issue details view
-            self.issue_details = QTextEdit()
-            self.issue_details.setReadOnly(True)
-            self.linear_content.addWidget(self.issue_details)
-            
-            # Set splitter sizes
-            self.linear_content.setSizes([200, 300, 500])
-            
-            # Create Plugins tab
-            self.plugins_tab = QWidget()
-            self.plugins_layout = QVBoxLayout(self.plugins_tab)
-            self.tab_widget.addTab(self.plugins_tab, "Plugins")
-            
-            # Create plugins list
-            self.plugins_list = QListWidget()
-            self.plugins_layout.addWidget(self.plugins_list)
-            
-            # Create plugin details
-            self.plugin_details = QTextEdit()
-            self.plugin_details.setReadOnly(True)
-            self.plugins_layout.addWidget(self.plugin_details)
-            
-            # Connect signals
-            self.plugins_list.currentItemChanged.connect(self._show_plugin_details)
-            self.repo_tree.clicked.connect(self._repo_selected)
-            self.pr_list.currentItemChanged.connect(self._pr_selected)
-            self.team_tree.clicked.connect(self._team_selected)
-            self.issue_list.currentItemChanged.connect(self._issue_selected)
+            # Create notification area
+            self.notification_widget = NotificationWidget(self)
+            self.toolbar.addWidget(self.notification_widget)
             
             logger.info("UI components initialized")
         except Exception as e:
-            logger.error(f"Error initializing UI: {e}", exc_info=True)
+            logger.error(f"Error initializing UI components: {e}", exc_info=True)
             raise
     
     def _load_plugins(self):
-        """Load and initialize plugins."""
+        """Load and display plugins."""
         try:
-            # Get all loaded plugins
-            self.plugins = self.plugin_manager.get_all_plugins()
+            # Clear existing plugin buttons
+            for button in self.plugin_buttons.values():
+                self.plugin_layout.removeWidget(button)
+                button.deleteLater()
+            self.plugin_buttons = {}
             
-            # Update plugins list
-            self.plugins_list.clear()
-            for name, plugin in self.plugins.items():
-                item = QListWidgetItem(f"{name} v{plugin.version}")
-                item.setData(Qt.UserRole, name)
-                self.plugins_list.addItem(item)
+            # Get all plugins
+            plugins = self.plugin_manager.get_all_plugins()
             
-            # Initialize plugin UIs
-            for name, plugin in self.plugins.items():
-                try:
-                    if hasattr(plugin, "get_ui"):
-                        ui = plugin.get_ui(self)
-                        if ui:
-                            self.plugin_uis[name] = ui
-                            
-                            # Check for specific plugins
-                            if name == "GitHubPlugin":
-                                self.github_ui = ui
-                            elif name == "LinearPlugin":
-                                self.linear_ui = ui
-                except Exception as e:
-                    logger.error(f"Error initializing UI for plugin {name}: {e}", exc_info=True)
+            # Create buttons for each plugin
+            for plugin_id, plugin in plugins.items():
+                if plugin.state == PluginState.ACTIVATED:
+                    try:
+                        # Create button for the plugin
+                        button = PluginButton(plugin, self)
+                        self.plugin_layout.addWidget(button)
+                        self.plugin_buttons[plugin_id] = button
+                        
+                        logger.info(f"Added button for plugin: {plugin_id}")
+                    except Exception as e:
+                        logger.error(f"Error creating button for plugin {plugin_id}: {e}", exc_info=True)
             
-            logger.info(f"Loaded {len(self.plugins)} plugins")
+            # Add spacer to push buttons to the left
+            spacer = QWidget()
+            spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            self.plugin_layout.addWidget(spacer)
+            
+            logger.info(f"Loaded {len(self.plugin_buttons)} plugin buttons")
         except Exception as e:
             logger.error(f"Error loading plugins: {e}", exc_info=True)
+            raise
     
     def _position_toolbar(self):
-        """Position the toolbar on the screen based on settings."""
+        """Position the toolbar on the screen."""
         try:
             # Get screen geometry
             screen = QDesktopWidget().screenGeometry()
             
-            # Calculate position based on toolbar position setting
+            # Calculate position based on configuration
             if self.position == "top":
                 x = (screen.width() - self.width()) // 2
                 y = 0
-                self.setGeometry(x, y, self.width(), self.height())
             elif self.position == "bottom":
                 x = (screen.width() - self.width()) // 2
                 y = screen.height() - self.height()
-                self.setGeometry(x, y, self.width(), self.height())
             elif self.position == "left":
                 x = 0
                 y = (screen.height() - self.height()) // 2
-                self.setGeometry(x, y, self.width(), self.height())
-            elif self.position == "right":
+            else:  # right
                 x = screen.width() - self.width()
                 y = (screen.height() - self.height()) // 2
-                self.setGeometry(x, y, self.width(), self.height())
-            else:
-                # Default to center
-                x = (screen.width() - self.width()) // 2
-                y = (screen.height() - self.height()) // 2
-                self.setGeometry(x, y, self.width(), self.height())
             
-            logger.info(f"Positioned toolbar at {self.geometry().x()}, {self.geometry().y()}, {self.width()}x{self.height()}")
+            # Move the toolbar
+            self.move(x, y)
+            
+            logger.info(f"Positioned toolbar at ({x}, {y})")
         except Exception as e:
             logger.error(f"Error positioning toolbar: {e}", exc_info=True)
     
     def _auto_save(self):
         """Auto-save configuration."""
         try:
-            self.config.save_config()
+            self.config.save()
             logger.debug("Configuration auto-saved")
         except Exception as e:
             logger.error(f"Error auto-saving configuration: {e}", exc_info=True)
-    
-    def _repo_selected(self, index):
-        """Handle repository selection."""
-        try:
-            # Get repository data
-            item = self.repo_model.itemFromIndex(index)
-            repo_data = item.data(Qt.UserRole)
-            
-            if repo_data:
-                # Update PR list
-                self.pr_list.clear()
-                
-                # Update status
-                self.status_label.setText(f"Selected repository: {repo_data['name']}")
-                
-                logger.info(f"Repository selected: {repo_data['name']}")
-        except Exception as e:
-            logger.error(f"Error handling repository selection: {e}", exc_info=True)
-    
-    def _pr_selected(self, current, previous):
-        """Handle PR selection."""
-        try:
-            if current:
-                # Get PR data
-                pr = current.data(Qt.UserRole)
-                
-                # Update PR details
-                self.pr_details.setHtml(f"""
-                    <h2>#{pr['number']} - {pr['title']}</h2>
-                    <p><b>Author:</b> {pr['user']['login']}</p>
-                    <p><b>Created:</b> {pr['created_at']}</p>
-                    <p><b>Status:</b> {pr['state']}</p>
-                    <p><b>Description:</b></p>
-                    <div>{pr['body']}</div>
-                """)
-                
-                # Update status
-                self.status_label.setText(f"Selected PR: #{pr['number']} - {pr['title']}")
-                
-                logger.info(f"PR selected: #{pr['number']} - {pr['title']}")
-        except Exception as e:
-            logger.error(f"Error handling PR selection: {e}", exc_info=True)
-    
-    def _team_selected(self, index):
-        """Handle team/project selection."""
-        try:
-            # Get team/project data
-            item = self.team_model.itemFromIndex(index)
-            data = item.data(Qt.UserRole)
-            
-            # Update status
-            if "type" in data and data["type"] == "team":
-                self.status_label.setText(f"Selected team: {data['name']}")
-                logger.info(f"Team selected: {data['name']}")
-            elif "type" in data and data["type"] == "project":
-                self.status_label.setText(f"Selected project: {data['name']}")
-                logger.info(f"Project selected: {data['name']}")
-        except Exception as e:
-            logger.error(f"Error handling team/project selection: {e}", exc_info=True)
-    
-    def _issue_selected(self, current, previous):
-        """Handle issue selection."""
-        try:
-            if current:
-                # Get issue data
-                issue = current.data(Qt.UserRole)
-                
-                # Update issue details
-                self.issue_details.setHtml(f"""
-                    <h2>{issue['identifier']} - {issue['title']}</h2>
-                    <p><b>Assignee:</b> {issue['assignee']['name'] if issue['assignee'] else 'Unassigned'}</p>
-                    <p><b>Status:</b> {issue['state']['name']}</p>
-                    <p><b>Priority:</b> {issue['priority']}</p>
-                    <p><b>Description:</b></p>
-                    <div>{issue['description']}</div>
-                """)
-                
-                # Update status
-                self.status_label.setText(f"Selected issue: {issue['identifier']} - {issue['title']}")
-                
-                logger.info(f"Issue selected: {issue['identifier']} - {issue['title']}")
-        except Exception as e:
-            logger.error(f"Error handling issue selection: {e}", exc_info=True)
-    
-    def _show_plugin_details(self, current, previous):
-        """Show plugin details."""
-        try:
-            if current:
-                # Get plugin name
-                name = current.data(Qt.UserRole)
-                
-                # Get plugin
-                plugin = self.plugins.get(name)
-                
-                if plugin:
-                    # Update plugin details
-                    self.plugin_details.setHtml(f"""
-                        <h2>{name} v{plugin.version}</h2>
-                        <p><b>Description:</b> {plugin.description}</p>
-                        <p><b>Status:</b> Active</p>
-                    """)
-                    
-                    logger.info(f"Plugin details shown for {name}")
-        except Exception as e:
-            logger.error(f"Error showing plugin details: {e}", exc_info=True)
-    
-    def _refresh_github(self):
-        """Refresh GitHub data."""
-        try:
-            if self.github_ui:
-                self.github_ui.refresh_repositories()
-                self.status_label.setText("GitHub data refreshed")
-                logger.info("GitHub data refreshed")
-            else:
-                QMessageBox.warning(self, "GitHub Plugin Not Available", 
-                                   "The GitHub plugin is not available. Please check the plugin status.")
-                logger.warning("GitHub plugin not available for refresh")
-        except Exception as e:
-            logger.error(f"Error refreshing GitHub data: {e}", exc_info=True)
-            QMessageBox.critical(self, "Refresh Error", f"Error refreshing GitHub data: {str(e)}")
-    
-    def _create_new_pr(self):
-        """Create a new GitHub PR."""
-        try:
-            if self.github_ui:
-                self.github_ui.create_pr()
-                logger.info("New PR creation initiated")
-            else:
-                QMessageBox.warning(self, "GitHub Plugin Not Available", 
-                                   "The GitHub plugin is not available. Please check the plugin status.")
-                logger.warning("GitHub plugin not available for PR creation")
-        except Exception as e:
-            logger.error(f"Error creating new PR: {e}", exc_info=True)
-            QMessageBox.critical(self, "PR Creation Error", f"Error creating new PR: {str(e)}")
-    
-    def _view_prs(self):
-        """View GitHub PRs."""
-        try:
-            if self.github_ui:
-                self.github_ui.view_prs()
-                logger.info("View PRs initiated")
-            else:
-                QMessageBox.warning(self, "GitHub Plugin Not Available", 
-                                   "The GitHub plugin is not available. Please check the plugin status.")
-                logger.warning("GitHub plugin not available for viewing PRs")
-        except Exception as e:
-            logger.error(f"Error viewing PRs: {e}", exc_info=True)
-            QMessageBox.critical(self, "View PRs Error", f"Error viewing PRs: {str(e)}")
-    
-    def _create_new_branch(self):
-        """Create a new GitHub branch."""
-        try:
-            if self.github_ui:
-                self.github_ui.create_branch()
-                logger.info("New branch creation initiated")
-            else:
-                QMessageBox.warning(self, "GitHub Plugin Not Available", 
-                                   "The GitHub plugin is not available. Please check the plugin status.")
-                logger.warning("GitHub plugin not available for branch creation")
-        except Exception as e:
-            logger.error(f"Error creating new branch: {e}", exc_info=True)
-            QMessageBox.critical(self, "Branch Creation Error", f"Error creating new branch: {str(e)}")
-    
-    def _refresh_linear(self):
-        """Refresh Linear data."""
-        try:
-            if "LinearPlugin" in self.plugins:
-                # Refresh Linear data
-                self.status_label.setText("Linear data refreshed")
-                logger.info("Linear data refreshed")
-            else:
-                QMessageBox.warning(self, "Linear Plugin Not Available", 
-                                   "The Linear plugin is not available. Please check the plugin status.")
-                logger.warning("Linear plugin not available for refresh")
-        except Exception as e:
-            logger.error(f"Error refreshing Linear data: {e}", exc_info=True)
-            QMessageBox.critical(self, "Refresh Error", f"Error refreshing Linear data: {str(e)}")
-    
-    def _create_new_issue(self):
-        """Create a new Linear issue."""
-        try:
-            if "LinearPlugin" in self.plugins:
-                # Create new issue
-                logger.info("New issue creation initiated")
-            else:
-                QMessageBox.warning(self, "Linear Plugin Not Available", 
-                                   "The Linear plugin is not available. Please check the plugin status.")
-                logger.warning("Linear plugin not available for issue creation")
-        except Exception as e:
-            logger.error(f"Error creating new issue: {e}", exc_info=True)
-            QMessageBox.critical(self, "Issue Creation Error", f"Error creating new issue: {str(e)}")
-    
-    def _view_issues(self):
-        """View Linear issues."""
-        try:
-            if "LinearPlugin" in self.plugins:
-                # View issues
-                logger.info("View issues initiated")
-            else:
-                QMessageBox.warning(self, "Linear Plugin Not Available", 
-                                   "The Linear plugin is not available. Please check the plugin status.")
-                logger.warning("Linear plugin not available for viewing issues")
-        except Exception as e:
-            logger.error(f"Error viewing issues: {e}", exc_info=True)
-            QMessageBox.critical(self, "View Issues Error", f"Error viewing issues: {str(e)}")
     
     def _show_settings(self):
         """Show settings dialog."""
@@ -567,9 +305,9 @@ class Toolbar(QMainWindow):
         """Apply settings from configuration."""
         try:
             # Get updated settings
-            new_position = self.config.get('ui', 'position', 'top')
-            new_opacity = float(self.config.get('ui', 'opacity', 0.9))
-            new_stay_on_top = self.config.get('ui', 'stay_on_top', True)
+            new_position = self.config.get_setting("ui.position", "top")
+            new_opacity = float(self.config.get_setting("ui.opacity", 0.9))
+            new_stay_on_top = self.config.get_setting("ui.stay_on_top", True)
             
             # Check if position changed
             position_changed = new_position != self.position
@@ -599,54 +337,362 @@ class Toolbar(QMainWindow):
                 # Recreate the layout
                 self._create_layout()
                 
-                # Re-add the tab widget
-                self.main_layout.addWidget(self.tab_widget)
-                
-                # Update tab position
-                if self.position == 'bottom':
-                    self.tab_widget.setTabPosition(QTabWidget.South)
-                elif self.position == 'left':
-                    self.tab_widget.setTabPosition(QTabWidget.West)
-                elif self.position == 'right':
-                    self.tab_widget.setTabPosition(QTabWidget.East)
-                else:  # default to top
-                    self.tab_widget.setTabPosition(QTabWidget.North)
+                # Re-add the plugin container
+                self.main_layout.addWidget(self.plugin_container)
                 
                 # Reposition the toolbar
                 self._position_toolbar()
+            
+            # Update tray icon if minimize_to_tray setting changed
+            minimize_to_tray = self.config.get_setting("ui.minimize_to_tray", True)
+            if minimize_to_tray and not self.tray_icon:
+                self._create_tray_icon()
+            elif not minimize_to_tray and self.tray_icon:
+                self.tray_icon.hide()
+                self.tray_icon = None
             
             logger.info(f"Applied settings: position={self.position}, opacity={self.opacity}, stay_on_top={self.stay_on_top}")
         except Exception as e:
             logger.error(f"Error applying settings: {e}", exc_info=True)
             QMessageBox.critical(self, "Settings Error", f"Error applying settings: {str(e)}")
     
-    def _show_linear_settings(self):
-        """Show Linear settings dialog."""
+    def _show_plugin_manager(self):
+        """Show plugin manager dialog."""
         try:
-            if self.linear_ui:
-                self.linear_ui.exec_()
-                logger.info("Linear settings dialog shown")
-            else:
-                QMessageBox.warning(self, "Linear Plugin Not Available", 
-                                   "The Linear plugin is not available. Please check the plugin status.")
-                logger.warning("Linear plugin not available for settings")
+            # Create plugin manager dialog
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Plugin Manager")
+            dialog.setMinimumWidth(600)
+            dialog.setMinimumHeight(400)
+            
+            # Create layout
+            layout = QVBoxLayout(dialog)
+            
+            # Create tab widget
+            tab_widget = QTabWidget()
+            layout.addWidget(tab_widget)
+            
+            # Create installed plugins tab
+            installed_tab = QWidget()
+            installed_layout = QVBoxLayout(installed_tab)
+            
+            # Create plugin list
+            plugin_list = QListWidget()
+            installed_layout.addWidget(plugin_list)
+            
+            # Add plugins to list
+            plugins = self.plugin_manager.get_all_plugins()
+            for plugin_id, plugin in plugins.items():
+                item = QListWidgetItem(f"{plugin.name} v{plugin.version}")
+                item.setData(Qt.UserRole, plugin_id)
+                plugin_list.addItem(item)
+            
+            # Create plugin details widget
+            plugin_details = QTextEdit()
+            plugin_details.setReadOnly(True)
+            installed_layout.addWidget(plugin_details)
+            
+            # Connect plugin list selection to show details
+            plugin_list.currentItemChanged.connect(
+                lambda current, previous: self._show_plugin_details(current, plugin_details)
+            )
+            
+            # Add buttons
+            buttons_layout = QHBoxLayout()
+            installed_layout.addLayout(buttons_layout)
+            
+            # Add enable/disable button
+            enable_disable_button = QPushButton("Enable/Disable")
+            enable_disable_button.clicked.connect(
+                lambda: self._toggle_plugin_state(plugin_list.currentItem())
+            )
+            buttons_layout.addWidget(enable_disable_button)
+            
+            # Add settings button
+            settings_button = QPushButton("Settings")
+            settings_button.clicked.connect(
+                lambda: self._show_plugin_settings(plugin_list.currentItem())
+            )
+            buttons_layout.addWidget(settings_button)
+            
+            # Add reload button
+            reload_button = QPushButton("Reload")
+            reload_button.clicked.connect(
+                lambda: self._reload_plugin(plugin_list.currentItem())
+            )
+            buttons_layout.addWidget(reload_button)
+            
+            # Add installed tab to tab widget
+            tab_widget.addTab(installed_tab, "Installed Plugins")
+            
+            # Create failed plugins tab
+            failed_tab = QWidget()
+            failed_layout = QVBoxLayout(failed_tab)
+            
+            # Create failed plugin list
+            failed_list = QListWidget()
+            failed_layout.addWidget(failed_list)
+            
+            # Add failed plugins to list
+            failed_plugins = self.plugin_manager.get_failed_plugins()
+            for plugin_id, error in failed_plugins.items():
+                item = QListWidgetItem(f"{plugin_id} (Failed)")
+                item.setData(Qt.UserRole, plugin_id)
+                item.setData(Qt.UserRole + 1, error)
+                failed_list.addItem(item)
+            
+            # Create failed plugin details widget
+            failed_details = QTextEdit()
+            failed_details.setReadOnly(True)
+            failed_layout.addWidget(failed_details)
+            
+            # Connect failed plugin list selection to show details
+            failed_list.currentItemChanged.connect(
+                lambda current, previous: self._show_failed_plugin_details(current, failed_details)
+            )
+            
+            # Add buttons
+            failed_buttons_layout = QHBoxLayout()
+            failed_layout.addLayout(failed_buttons_layout)
+            
+            # Add disable button
+            disable_button = QPushButton("Disable")
+            disable_button.clicked.connect(
+                lambda: self._disable_failed_plugin(failed_list.currentItem())
+            )
+            failed_buttons_layout.addWidget(disable_button)
+            
+            # Add failed tab to tab widget
+            tab_widget.addTab(failed_tab, "Failed Plugins")
+            
+            # Add close button
+            close_button = QPushButton("Close")
+            close_button.clicked.connect(dialog.accept)
+            layout.addWidget(close_button)
+            
+            # Show dialog
+            dialog.exec_()
+            
+            # Reload plugins after dialog is closed
+            self._load_plugins()
+            
+            logger.info("Plugin manager dialog shown")
         except Exception as e:
-            logger.error(f"Error showing Linear settings dialog: {e}", exc_info=True)
-            QMessageBox.critical(self, "Linear Settings Error", f"Error showing Linear settings dialog: {str(e)}")
+            logger.error(f"Error showing plugin manager dialog: {e}", exc_info=True)
+            QMessageBox.critical(self, "Plugin Manager Error", f"Error showing plugin manager dialog: {str(e)}")
+    
+    def _show_plugin_details(self, item, details_widget):
+        """Show details for a plugin."""
+        if not item:
+            details_widget.clear()
+            return
+        
+        try:
+            plugin_id = item.data(Qt.UserRole)
+            plugin = self.plugin_manager.get_plugin(plugin_id)
+            
+            if plugin:
+                # Update plugin details
+                details_widget.setHtml(f"""
+                    <h2>{plugin.name} v{plugin.version}</h2>
+                    <p><b>Description:</b> {plugin.description}</p>
+                    <p><b>Status:</b> {plugin.state.value}</p>
+                    <p><b>Type:</b> {plugin.manifest.plugin_type.value if plugin.manifest else "Unknown"}</p>
+                    <p><b>Author:</b> {plugin.manifest.author if plugin.manifest else "Unknown"}</p>
+                """)
+                
+                logger.info(f"Plugin details shown for {plugin_id}")
+        except Exception as e:
+            logger.error(f"Error showing plugin details: {e}", exc_info=True)
+            details_widget.setHtml(f"<p>Error showing plugin details: {str(e)}</p>")
+    
+    def _show_failed_plugin_details(self, item, details_widget):
+        """Show details for a failed plugin."""
+        if not item:
+            details_widget.clear()
+            return
+        
+        try:
+            plugin_id = item.data(Qt.UserRole)
+            error = item.data(Qt.UserRole + 1)
+            
+            # Update plugin details
+            details_widget.setHtml(f"""
+                <h2>{plugin_id}</h2>
+                <p><b>Status:</b> Failed</p>
+                <p><b>Error:</b> {error}</p>
+            """)
+            
+            logger.info(f"Failed plugin details shown for {plugin_id}")
+        except Exception as e:
+            logger.error(f"Error showing failed plugin details: {e}", exc_info=True)
+            details_widget.setHtml(f"<p>Error showing failed plugin details: {str(e)}</p>")
+    
+    def _toggle_plugin_state(self, item):
+        """Toggle the state of a plugin."""
+        if not item:
+            return
+        
+        try:
+            plugin_id = item.data(Qt.UserRole)
+            plugin = self.plugin_manager.get_plugin(plugin_id)
+            
+            if plugin:
+                if plugin.state == PluginState.ACTIVATED:
+                    # Deactivate the plugin
+                    plugin.deactivate()
+                    QMessageBox.information(self, "Plugin Deactivated", f"Plugin {plugin.name} has been deactivated.")
+                    logger.info(f"Plugin {plugin_id} deactivated")
+                else:
+                    # Activate the plugin
+                    plugin.activate()
+                    QMessageBox.information(self, "Plugin Activated", f"Plugin {plugin.name} has been activated.")
+                    logger.info(f"Plugin {plugin_id} activated")
+                
+                # Update the item text
+                item.setText(f"{plugin.name} v{plugin.version}")
+        except Exception as e:
+            logger.error(f"Error toggling plugin state: {e}", exc_info=True)
+            QMessageBox.critical(self, "Plugin Error", f"Error toggling plugin state: {str(e)}")
+    
+    def _show_plugin_settings(self, item):
+        """Show settings for a plugin."""
+        if not item:
+            return
+        
+        try:
+            plugin_id = item.data(Qt.UserRole)
+            plugin = self.plugin_manager.get_plugin(plugin_id)
+            
+            if plugin:
+                # Show plugin settings dialog
+                dialog = PluginSettingsDialog(plugin, self)
+                dialog.exec_()
+                logger.info(f"Plugin settings shown for {plugin_id}")
+        except Exception as e:
+            logger.error(f"Error showing plugin settings: {e}", exc_info=True)
+            QMessageBox.critical(self, "Plugin Settings Error", f"Error showing plugin settings: {str(e)}")
+    
+    def _reload_plugin(self, item):
+        """Reload a plugin."""
+        if not item:
+            return
+        
+        try:
+            plugin_id = item.data(Qt.UserRole)
+            
+            # Reload the plugin
+            success = self.plugin_manager.reload_plugin(plugin_id)
+            
+            if success:
+                QMessageBox.information(self, "Plugin Reloaded", f"Plugin {plugin_id} has been reloaded.")
+                logger.info(f"Plugin {plugin_id} reloaded")
+                
+                # Update the item text
+                plugin = self.plugin_manager.get_plugin(plugin_id)
+                if plugin:
+                    item.setText(f"{plugin.name} v{plugin.version}")
+            else:
+                QMessageBox.warning(self, "Plugin Reload Failed", f"Failed to reload plugin {plugin_id}.")
+                logger.warning(f"Failed to reload plugin {plugin_id}")
+        except Exception as e:
+            logger.error(f"Error reloading plugin: {e}", exc_info=True)
+            QMessageBox.critical(self, "Plugin Reload Error", f"Error reloading plugin: {str(e)}")
+    
+    def _disable_failed_plugin(self, item):
+        """Disable a failed plugin."""
+        if not item:
+            return
+        
+        try:
+            plugin_id = item.data(Qt.UserRole)
+            
+            # Disable the plugin
+            self.plugin_manager.disable_plugin(plugin_id)
+            
+            QMessageBox.information(self, "Plugin Disabled", f"Plugin {plugin_id} has been disabled.")
+            logger.info(f"Failed plugin {plugin_id} disabled")
+            
+            # Remove the item from the list
+            item.listWidget().takeItem(item.listWidget().row(item))
+        except Exception as e:
+            logger.error(f"Error disabling failed plugin: {e}", exc_info=True)
+            QMessageBox.critical(self, "Plugin Disable Error", f"Error disabling failed plugin: {str(e)}")
+    
+    def _create_tray_icon(self):
+        """Create system tray icon."""
+        try:
+            # Create tray icon
+            self.tray_icon = QSystemTrayIcon(QIcon.fromTheme("applications-system"), self)
+            
+            # Create tray menu
+            tray_menu = QMenu()
+            
+            # Add show/hide action
+            show_hide_action = QAction("Show/Hide Toolbar", self)
+            show_hide_action.triggered.connect(self._toggle_visibility)
+            tray_menu.addAction(show_hide_action)
+            
+            # Add settings action
+            settings_action = QAction("Settings", self)
+            settings_action.triggered.connect(self._show_settings)
+            tray_menu.addAction(settings_action)
+            
+            # Add plugin manager action
+            plugin_manager_action = QAction("Plugins", self)
+            plugin_manager_action.triggered.connect(self._show_plugin_manager)
+            tray_menu.addAction(plugin_manager_action)
+            
+            # Add separator
+            tray_menu.addSeparator()
+            
+            # Add exit action
+            exit_action = QAction("Exit", self)
+            exit_action.triggered.connect(self.close)
+            tray_menu.addAction(exit_action)
+            
+            # Set tray menu
+            self.tray_icon.setContextMenu(tray_menu)
+            
+            # Connect tray icon activated signal
+            self.tray_icon.activated.connect(self._tray_icon_activated)
+            
+            # Show tray icon
+            self.tray_icon.show()
+            
+            logger.info("System tray icon created")
+        except Exception as e:
+            logger.error(f"Error creating system tray icon: {e}", exc_info=True)
+    
+    def _toggle_visibility(self):
+        """Toggle toolbar visibility."""
+        if self.isVisible():
+            self.hide()
+        else:
+            self.show()
+            self.raise_()
+            self.activateWindow()
+    
+    def _tray_icon_activated(self, reason):
+        """Handle tray icon activation."""
+        if reason == QSystemTrayIcon.Trigger:
+            self._toggle_visibility()
     
     def closeEvent(self, event):
         """Handle close event."""
         try:
+            # Check if minimize to tray is enabled
+            if self.config.get_setting("ui.minimize_to_tray", True) and self.tray_icon:
+                # Minimize to tray instead of closing
+                self.hide()
+                event.ignore()
+                return
+            
             # Save configuration
-            self.config.save_config()
+            self.config.save()
             
             # Clean up plugins
-            for name, plugin in self.plugins.items():
-                try:
-                    if hasattr(plugin, "cleanup"):
-                        plugin.cleanup()
-                except Exception as e:
-                    logger.error(f"Error cleaning up plugin {name}: {e}", exc_info=True)
+            self.plugin_manager.cleanup()
             
             logger.info("Toolbar closed")
             event.accept()
