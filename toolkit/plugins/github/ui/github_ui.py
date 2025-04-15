@@ -113,6 +113,7 @@ class NotificationsPanel(QWidget):
         
         # Set up the UI
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
         
         # Header
         header_layout = QHBoxLayout()
@@ -127,28 +128,23 @@ class NotificationsPanel(QWidget):
         
         layout.addLayout(header_layout)
         
-        # Notifications area
-        self.notifications_area = QScrollArea()
-        self.notifications_area.setWidgetResizable(True)
-        self.notifications_area.setFrameShape(QFrame.NoFrame)
+        # Notifications scroll area
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.NoFrame)
         
-        self.notifications_container = QWidget()
-        self.notifications_layout = QVBoxLayout(self.notifications_container)
-        self.notifications_layout.setAlignment(Qt.AlignTop)
+        self.notifications_widget = QWidget()
+        self.notifications_layout = QVBoxLayout(self.notifications_widget)
         self.notifications_layout.setContentsMargins(0, 0, 0, 0)
         self.notifications_layout.setSpacing(5)
+        self.notifications_layout.addStretch()
         
-        self.notifications_area.setWidget(self.notifications_container)
-        layout.addWidget(self.notifications_area)
+        scroll_area.setWidget(self.notifications_widget)
+        layout.addWidget(scroll_area)
         
-        # Empty state
-        self.empty_label = QLabel("No notifications")
-        self.empty_label.setAlignment(Qt.AlignCenter)
-        self.empty_label.setStyleSheet("color: #888;")
-        self.notifications_layout.addWidget(self.empty_label)
-        
-        # Connect signals
-        self.github_manager.notification_added.connect(self.add_notification)
+        # Set widget properties
+        self.setMinimumWidth(300)
+        self.setMaximumHeight(400)
     
     def add_notification(self, notification):
         """
@@ -157,93 +153,116 @@ class NotificationsPanel(QWidget):
         Args:
             notification (GitHubNotification): The notification to add
         """
-        # Hide empty state if visible
-        if self.empty_label.isVisible():
-            self.empty_label.hide()
+        notification_widget = NotificationWidget(notification, self)
+        notification_widget.closed.connect(self.remove_notification)
         
-        # Create notification widget
-        widget = NotificationWidget(notification)
-        widget.closed.connect(self.remove_notification_widget)
-        
-        # Add to layout
-        self.notifications_layout.insertWidget(0, widget)
+        # Insert at the top (before the stretch)
+        self.notifications_layout.insertWidget(0, notification_widget)
         
         # Add to manager
-        self.github_manager.add_notification_widget(widget)
+        self.github_manager.add_notification_widget(notification_widget)
     
-    def remove_notification_widget(self, widget):
+    def remove_notification(self, widget):
         """
-        Remove a notification widget from the panel.
+        Remove a notification from the panel.
         
         Args:
-            widget (NotificationWidget): The widget to remove
+            widget (NotificationWidget): The notification widget to remove
         """
         self.github_manager.remove_notification_widget(widget)
-        
-        # Show empty state if no notifications
-        if self.notifications_layout.count() == 1:  # Only empty label
-            self.empty_label.show()
     
     def clear_all_notifications(self):
         """Clear all notifications."""
         # Remove all notification widgets
-        for i in reversed(range(self.notifications_layout.count())):
-            item = self.notifications_layout.itemAt(i)
-            if item and item.widget() != self.empty_label:
-                widget = item.widget()
-                self.notifications_layout.removeWidget(widget)
-                widget.deleteLater()
+        while self.notifications_layout.count() > 1:  # Keep the stretch
+            item = self.notifications_layout.itemAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+            self.notifications_layout.removeItem(item)
         
         # Clear notifications in manager
         self.github_manager.clear_all_notifications()
-        
-        # Show empty state
-        self.empty_label.show()
 
-class GitHubUI(QObject):
-    """Main UI class for the GitHub plugin."""
+class GitHubUI(QWidget):
+    """UI component for GitHub functionality."""
     
-    def __init__(self, github_manager, toolbar, parent=None):
+    def __init__(self, github_manager, toolbar=None, parent=None):
         """
         Initialize the GitHub UI.
         
         Args:
             github_manager (GitHubManager): The GitHub manager instance
-            toolbar: The toolbar instance
-            parent (QObject, optional): Parent object
+            toolbar: The toolbar to add the GitHub icon to
+            parent (QWidget, optional): Parent widget
         """
         super().__init__(parent)
+        
         self.github_manager = github_manager
         self.toolbar = toolbar
-        self.toolbar_button = None
-        self.notification_badge = None
-        self.settings_dialog = None
-        self.projects_dialog = None
-        self.notifications_panel = None
+        self.github_monitor = github_manager.github_monitor
         
-        # Initialize UI components
-        self._init_ui()
+        # GitHub button
+        self.github_button = None
+        
+        # Notifications panel
+        self.notifications_panel = NotificationsPanel(github_manager, self)
+        self.notifications_panel.hide()
         
         # Connect signals
-        self.github_manager.notification_added.connect(self.update_notification_badge)
+        self.github_manager.notification_added.connect(self.on_notification_added)
         self.github_manager.project_added.connect(self.on_project_added)
         self.github_manager.project_removed.connect(self.on_project_removed)
-    
-    def _init_ui(self):
-        """Initialize UI components."""
-        # Create toolbar button
-        self.toolbar_button = QToolButton()
-        self.toolbar_button.setIcon(self._get_github_icon())
-        self.toolbar_button.setIconSize(QSize(24, 24))
-        self.toolbar_button.setToolTip("GitHub")
-        self.toolbar_button.clicked.connect(self.show_menu)
         
-        # Create notification badge
+        # Load pinned projects
+        self.github_manager.load_pinned_projects()
+    
+    def add_to_toolbar(self, position='right'):
+        """
+        Add the GitHub icon to the toolbar.
+        
+        Args:
+            position (str): Position in the toolbar ('left', 'middle', 'right')
+        """
+        if not self.toolbar:
+            logger.warning("No toolbar available to add GitHub icon")
+            return
+        
+        # Create GitHub button
+        self.github_button = QToolButton()
+        
+        # Load icon
+        icon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                               "ui", "icons", "github.svg")
+        if os.path.exists(icon_path):
+            self.github_button.setIcon(QIcon(icon_path))
+        else:
+            # Fallback text
+            self.github_button.setText("GH")
+        
+        self.github_button.setIconSize(QSize(24, 24))
+        self.github_button.setToolTip("GitHub")
+        
+        # Set up context menu
+        self.github_button.setPopupMode(QToolButton.InstantPopup)
+        self.setup_context_menu()
+        
+        # Add to toolbar based on position
+        if position == 'middle':
+            # Add to middle of toolbar
+            self.toolbar.add_widget_to_center(self.github_button)
+        elif position == 'left':
+            # Add to left side of toolbar
+            self.toolbar.add_widget_to_left(self.github_button)
+        else:
+            # Add to right side of toolbar (default)
+            self.toolbar.add_widget_to_right(self.github_button)
+        
+        # Add notification badge
         self.notification_badge = QLabel("0")
         self.notification_badge.setStyleSheet("""
             background-color: red;
             color: white;
-            border-radius: 10px;
+            border-radius: 8px;
             padding: 2px;
             font-size: 10px;
         """)
@@ -251,122 +270,94 @@ class GitHubUI(QObject):
         self.notification_badge.setAlignment(Qt.AlignCenter)
         self.notification_badge.hide()
         
-        # Create notifications panel
-        self.notifications_panel = NotificationsPanel(self.github_manager)
-        
-        # Load pinned projects
-        self.github_manager.load_pinned_projects()
-    
-    def _get_github_icon(self):
-        """Get the GitHub icon."""
-        icon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-                               "ui", "icons", "github.svg")
-        if os.path.exists(icon_path):
-            return QIcon(icon_path)
-        else:
-            # Create a fallback icon
-            return QIcon.fromTheme("github", QIcon.fromTheme("web-browser"))
-    
-    def add_to_toolbar(self):
-        """Add the GitHub button to the toolbar."""
-        if self.toolbar and self.toolbar_button:
-            # Add to middle of toolbar
-            self.toolbar.add_widget_to_center(self.toolbar_button)
-            
-            # Add notification badge
-            if self.notification_badge:
-                self.toolbar.add_badge_to_widget(self.toolbar_button, self.notification_badge)
+        # Add badge to toolbar
+        if hasattr(self.toolbar, 'add_badge_to_widget'):
+            self.toolbar.add_badge_to_widget(self.github_button, self.notification_badge)
     
     def remove_from_toolbar(self):
-        """Remove the GitHub button from the toolbar."""
-        if self.toolbar and self.toolbar_button:
-            self.toolbar.remove_widget(self.toolbar_button)
+        """Remove the GitHub icon from the toolbar."""
+        if self.toolbar and self.github_button:
+            self.toolbar.remove_widget(self.github_button)
+            self.github_button = None
     
-    def show_menu(self):
-        """Show the GitHub menu."""
+    def setup_context_menu(self):
+        """Set up the context menu for the GitHub button."""
         menu = QMenu()
         
         # Settings action
-        settings_action = menu.addAction("Settings")
+        settings_action = QAction("Settings", self)
         settings_action.triggered.connect(self.show_settings)
+        menu.addAction(settings_action)
         
         # Projects action
-        projects_action = menu.addAction("Projects")
+        projects_action = QAction("Projects", self)
         projects_action.triggered.connect(self.show_projects)
+        menu.addAction(projects_action)
         
         # Notifications action
-        notifications_action = menu.addAction("Notifications")
-        notifications_action.triggered.connect(self.show_notifications)
-        
-        # Separator
-        menu.addSeparator()
+        notifications_action = QAction("Notifications", self)
+        notifications_action.triggered.connect(self.toggle_notifications_panel)
+        menu.addAction(notifications_action)
         
         # Clear notifications action
-        clear_action = menu.addAction("Clear All Notifications")
-        clear_action.triggered.connect(self.github_manager.clear_all_notifications)
+        clear_action = QAction("Clear Notifications", self)
+        clear_action.triggered.connect(self.clear_all_notifications)
+        menu.addAction(clear_action)
         
-        # Show menu
-        menu.exec_(QCursor.pos())
+        # Set menu
+        self.github_button.setMenu(menu)
     
     def show_settings(self):
         """Show the GitHub settings dialog."""
-        if not self.settings_dialog:
-            self.settings_dialog = GitHubSettingsDialog(self.github_manager.github_monitor)
+        dialog = GitHubSettingsDialog(self.github_monitor, self)
+        dialog.exec_()
         
-        self.settings_dialog.show()
-        self.settings_dialog.raise_()
-        self.settings_dialog.activateWindow()
+        # Restart monitoring if token is set
+        if self.github_monitor.token:
+            self.github_monitor.stop_monitoring()
+            self.github_monitor.start_monitoring()
     
     def show_projects(self):
         """Show the GitHub projects dialog."""
-        if not self.projects_dialog:
-            self.projects_dialog = GitHubProjectsDialog(self.github_manager)
-        
-        self.projects_dialog.show()
-        self.projects_dialog.raise_()
-        self.projects_dialog.activateWindow()
-    
-    def show_notifications(self):
-        """Show the notifications panel."""
-        dialog = QDialog()
-        dialog.setWindowTitle("GitHub Notifications")
-        dialog.setMinimumSize(400, 300)
-        
-        layout = QVBoxLayout(dialog)
-        layout.addWidget(self.notifications_panel)
-        
+        dialog = GitHubProjectsDialog(self.github_manager, self)
         dialog.exec_()
     
-    def update_notification_badge(self):
-        """Update the notification badge."""
-        # Count unread notifications
-        count = 0
-        for project in self.github_manager.github_monitor.projects:
-            count += len([n for n in project.notifications if not n.read])
+    def toggle_notifications_panel(self):
+        """Toggle the notifications panel."""
+        if self.notifications_panel.isVisible():
+            self.notifications_panel.hide()
+        else:
+            # Position panel below GitHub button
+            if self.github_button:
+                global_pos = self.github_button.mapToGlobal(self.github_button.rect().bottomLeft())
+                self.notifications_panel.move(global_pos)
+                self.notifications_panel.show()
+    
+    def on_notification_added(self, notification):
+        """
+        Handle a new notification.
+        
+        Args:
+            notification (GitHubNotification): The notification to add
+        """
+        # Add to notifications panel
+        self.notifications_panel.add_notification(notification)
         
         # Update badge
-        if count > 0:
-            self.notification_badge.setText(str(count))
-            self.notification_badge.show()
-        else:
-            self.notification_badge.hide()
+        self.update_notification_badge()
     
     def on_project_added(self, project):
         """
-        Handle a project being added.
+        Handle a new project being added.
         
         Args:
             project (GitHubProject): The project that was added
         """
-        # Create project widget
-        widget = ProjectWidget(project, self.github_manager)
-        
-        # Add to toolbar
-        if self.toolbar:
-            self.toolbar.add_widget(widget)
-        
-        # Add to manager
-        self.github_manager.project_widgets[project.full_name] = widget
+        # Add project to toolbar if it has a toolbar
+        if self.toolbar and hasattr(self.toolbar, 'add_project_widget'):
+            project_widget = ProjectWidget(project, self.github_manager)
+            self.toolbar.add_project_widget(project_widget)
+            self.github_manager.project_widgets[project.full_name] = project_widget
     
     def on_project_removed(self, project):
         """
@@ -375,8 +366,27 @@ class GitHubUI(QObject):
         Args:
             project (GitHubProject): The project that was removed
         """
-        # Remove from toolbar
-        if project.full_name in self.github_manager.project_widgets:
-            widget = self.github_manager.project_widgets[project.full_name]
-            if self.toolbar:
-                self.toolbar.remove_widget(widget)
+        # Remove project from toolbar if it has a toolbar
+        if self.toolbar and project.full_name in self.github_manager.project_widgets:
+            project_widget = self.github_manager.project_widgets[project.full_name]
+            self.toolbar.remove_widget(project_widget)
+    
+    def update_notification_badge(self):
+        """Update the notification badge with the current count."""
+        # Count unread notifications
+        count = 0
+        for widget in self.github_manager.notification_widgets:
+            if not widget.notification.read:
+                count += 1
+        
+        # Update badge
+        if count > 0:
+            self.notification_badge.setText(str(count))
+            self.notification_badge.show()
+        else:
+            self.notification_badge.hide()
+    
+    def clear_all_notifications(self):
+        """Clear all notifications."""
+        self.notifications_panel.clear_all_notifications()
+        self.update_notification_badge()

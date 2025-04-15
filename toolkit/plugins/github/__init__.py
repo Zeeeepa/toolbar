@@ -49,8 +49,8 @@ class GitHubPlugin(QObject):
             from toolkit.plugins.github.ui.github_ui import GitHubUI
             self.ui = GitHubUI(self.manager, toolbar)
             
-            # Add GitHub icon to toolbar
-            self.ui.add_to_toolbar()
+            # Add GitHub icon to the middle of toolbar
+            self.ui.add_to_toolbar(position='middle')
             
             # Start monitoring if enabled
             if config.get('github', 'token', ''):

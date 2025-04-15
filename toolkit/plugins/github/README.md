@@ -9,6 +9,8 @@ This plugin provides GitHub integration for the Toolkit application, allowing yo
 - Notification system for PRs and new branches
 - Settings panel for configuring GitHub credentials
 - Project management dialog for selecting which repos to display
+- Notification badges on project icons and the GitHub icon
+- Configurable notification preferences (PR and branch notifications)
 
 ## Installation
 
@@ -17,16 +19,17 @@ This plugin provides GitHub integration for the Toolkit application, allowing yo
    pip install PyGithub requests
    ```
 
-2. Copy the `github` directory to your Toolkit's plugins directory.
-
-3. The plugin will be automatically loaded when Toolkit starts.
+2. The plugin will be automatically loaded when Toolkit starts.
 
 ## Usage
 
-1. Click on the GitHub icon in the toolbar to access the plugin menu.
-2. Select "Settings" to configure your GitHub API token.
-3. Select "Projects" to choose which repositories to pin to the toolbar.
-4. Notifications will appear when there are new PRs or branches in your pinned repositories.
+1. The GitHub icon appears in the middle of the toolbar.
+2. Click on the GitHub icon to access the plugin menu.
+3. Select "Settings" to configure your GitHub API token.
+4. Select "Projects" to choose which repositories to pin to the toolbar.
+5. Notifications will appear when there are new PRs or branches in your pinned repositories.
+6. Click on a notification to open it in your browser.
+7. Click on a project icon to open the repository in your browser.
 
 ## Configuration
 

@@ -63,6 +63,26 @@ class GitHubMonitor(QObject):
         self.notify_prs = config.get('github', 'notify_prs', True)
         self.notify_branches = config.get('github', 'notify_branches', True)
     
+    def validate_credentials(self) -> Tuple[bool, str]:
+        """
+        Validate GitHub credentials.
+        
+        Returns:
+            Tuple[bool, str]: (is_valid, username)
+        """
+        if not self.token:
+            return False, ""
+        
+        try:
+            # Create a new GitHub client with the token
+            github = Github(self.token)
+            user = github.get_user()
+            username = user.login
+            return True, username
+        except Exception as e:
+            logger.error(f"Failed to validate GitHub credentials: {e}")
+            return False, ""
+    
     def start_monitoring(self):
         """Start monitoring GitHub repositories."""
         if self.monitoring:
@@ -100,238 +120,223 @@ class GitHubMonitor(QObject):
         if not self.github:
             return
         
-        for project in self.projects:
-            if not project.pinned:
-                continue
+        try:
+            # Get user repositories
+            user = self.github.get_user()
+            repos = user.get_repos()
             
-            try:
-                repo = self.github.get_repo(project.full_name)
+            # Check each repository for updates
+            for repo in repos:
+                # Skip forks if configured to do so
+                if repo.fork and not self.config.get('github', 'include_forks', False):
+                    continue
                 
-                # Check for new PRs
+                # Get or create project
+                project = self.get_project(repo.name, repo.full_name, repo.owner.login, repo.html_url)
+                
+                # Check for new pull requests
                 if self.notify_prs:
                     self._check_pull_requests(project, repo)
                 
                 # Check for new branches
                 if self.notify_branches:
                     self._check_branches(project, repo)
-            
-            except Exception as e:
-                logger.error(f"Error checking updates for {project.full_name}: {e}")
+        
+        except Exception as e:
+            logger.error(f"Error checking for updates: {e}")
     
     def _check_pull_requests(self, project, repo):
-        """Check for new pull requests in a repository."""
+        """
+        Check for new pull requests in a repository.
+        
+        Args:
+            project (GitHubProject): The project to check
+            repo: The GitHub repository object
+        """
         try:
-            # Get open PRs
-            pulls = repo.get_pulls(state='open', sort='created', direction='desc')
+            # Get open pull requests
+            pulls = repo.get_pulls(state='open')
             
-            # Check the first 10 PRs (most recent)
-            for i, pull in enumerate(pulls):
-                if i >= 10:
-                    break
-                
-                # Skip PRs older than 24 hours
-                if datetime.now() - pull.created_at > timedelta(hours=24):
-                    continue
-                
-                # Check if we already have this PR in notifications
-                pr_url = pull.html_url
-                if any(n.url == pr_url for n in project.notifications):
+            # Check each pull request
+            for pull in pulls:
+                # Skip if already notified
+                if any(n.url == pull.html_url for n in project.notifications):
                     continue
                 
                 # Create notification
                 notification = GitHubNotification(
                     title=f"New PR: {pull.title}",
-                    url=pr_url,
+                    url=pull.html_url,
                     created_at=pull.created_at,
                     type_str="pr",
                     repo_name=project.full_name
                 )
                 
-                # Add notification to project
+                # Add to project
                 project.add_notification(notification)
                 
                 # Emit signals
                 self.notification_received.emit(notification)
                 self.project_notification_received.emit(project, notification)
                 
-                # Save projects
-                self.save_projects()
+                logger.info(f"New PR notification: {notification.title}")
         
         except Exception as e:
-            logger.error(f"Error checking PRs for {project.full_name}: {e}")
+            logger.error(f"Error checking pull requests for {project.full_name}: {e}")
     
     def _check_branches(self, project, repo):
-        """Check for new branches in a repository."""
+        """
+        Check for new branches in a repository.
+        
+        Args:
+            project (GitHubProject): The project to check
+            repo: The GitHub repository object
+        """
         try:
             # Get branches
             branches = repo.get_branches()
             
-            # Get existing branch URLs
-            existing_branch_urls = {n.url for n in project.notifications if n.type == "branch"}
+            # Get known branch names
+            known_branches = set()
+            for notification in project.notifications:
+                if notification.type == "branch" and notification.payload:
+                    known_branches.add(notification.payload.get("name", ""))
             
-            # Check branches
+            # Check each branch
             for branch in branches:
-                # Skip master/main branch
-                if branch.name in ('master', 'main'):
+                # Skip if already notified
+                if branch.name in known_branches:
                     continue
                 
-                # Get branch URL
-                branch_url = f"{repo.html_url}/tree/{branch.name}"
-                
-                # Skip if we already have this branch
-                if branch_url in existing_branch_urls:
-                    continue
-                
-                # Get commit date
-                commit = branch.commit
-                commit_obj = repo.get_commit(commit.sha)
-                commit_date = commit_obj.commit.author.date
-                
-                # Skip branches older than 24 hours
-                if datetime.now() - commit_date > timedelta(hours=24):
+                # Skip default branch
+                if branch.name == repo.default_branch:
                     continue
                 
                 # Create notification
                 notification = GitHubNotification(
                     title=f"New branch: {branch.name}",
-                    url=branch_url,
-                    created_at=commit_date,
+                    url=f"{repo.html_url}/tree/{branch.name}",
+                    created_at=datetime.now(),
                     type_str="branch",
-                    repo_name=project.full_name
+                    repo_name=project.full_name,
+                    payload={"name": branch.name}
                 )
                 
-                # Add notification to project
+                # Add to project
                 project.add_notification(notification)
                 
                 # Emit signals
                 self.notification_received.emit(notification)
                 self.project_notification_received.emit(project, notification)
                 
-                # Save projects
-                self.save_projects()
+                logger.info(f"New branch notification: {notification.title}")
+                
+                # Add to known branches
+                known_branches.add(branch.name)
         
         except Exception as e:
             logger.error(f"Error checking branches for {project.full_name}: {e}")
     
-    def get_user_repositories(self) -> List[GitHubProject]:
-        """Get repositories for the authenticated user."""
+    def get_project(self, name, full_name, owner, url):
+        """
+        Get or create a project.
+        
+        Args:
+            name (str): Project name
+            full_name (str): Full repository name (owner/repo)
+            owner (str): Repository owner
+            url (str): Repository URL
+        
+        Returns:
+            GitHubProject: The project
+        """
+        # Check if project already exists
+        for project in self.projects:
+            if project.full_name == full_name:
+                return project
+        
+        # Create new project
+        project = GitHubProject(name, full_name, owner, url)
+        self.projects.append(project)
+        
+        return project
+    
+    def get_user_repositories(self):
+        """
+        Get repositories for the authenticated user.
+        
+        Returns:
+            List[GitHubProject]: List of projects
+        """
         if not self.github:
             return []
         
         try:
-            repos = []
+            # Get user repositories
+            user = self.github.get_user()
+            repos = user.get_repos()
             
-            # Get user's repositories
-            for repo in self.github.get_user().get_repos():
-                project = GitHubProject(
-                    name=repo.name,
-                    full_name=repo.full_name,
-                    owner=repo.owner.login,
-                    url=repo.html_url,
-                    icon_url=repo.owner.avatar_url
-                )
+            # Convert to projects
+            projects = []
+            for repo in repos:
+                # Skip forks if configured to do so
+                if repo.fork and not self.config.get('github', 'include_forks', False):
+                    continue
                 
-                # Check if project is already pinned
-                for existing_project in self.projects:
-                    if existing_project.full_name == project.full_name:
-                        project.pinned = existing_project.pinned
-                        break
-                
-                repos.append(project)
+                project = self.get_project(repo.name, repo.full_name, repo.owner.login, repo.html_url)
+                projects.append(project)
             
-            return repos
+            return projects
         
         except Exception as e:
             logger.error(f"Error getting user repositories: {e}")
             return []
     
-    def add_project(self, project):
-        """Add a project to the monitor."""
-        # Check if project already exists
-        for existing_project in self.projects:
-            if existing_project.full_name == project.full_name:
-                return existing_project
-        
-        # Add project
-        self.projects.append(project)
-        self.save_projects()
-        return project
-    
-    def remove_project(self, project):
-        """Remove a project from the monitor."""
-        self.projects = [p for p in self.projects if p.full_name != project.full_name]
-        self.save_projects()
-    
     def pin_project(self, project, pinned=True):
-        """Pin or unpin a project."""
-        for p in self.projects:
-            if p.full_name == project.full_name:
-                p.pinned = pinned
-                self.save_projects()
-                return
+        """
+        Pin or unpin a project.
         
-        # If project doesn't exist, add it
+        Args:
+            project (GitHubProject): The project to pin/unpin
+            pinned (bool, optional): Whether to pin or unpin the project
+        """
         project.pinned = pinned
-        self.add_project(project)
+        self.save_projects()
+    
+    def load_projects(self):
+        """Load projects from configuration."""
+        try:
+            projects_json = self.config.get('github', 'projects', '[]')
+            projects_data = json.loads(projects_json)
+            
+            self.projects = []
+            for project_data in projects_data:
+                project = GitHubProject.from_dict(project_data)
+                self.projects.append(project)
+            
+            logger.info(f"Loaded {len(self.projects)} projects from configuration")
+        
+        except Exception as e:
+            logger.error(f"Error loading projects: {e}")
+            self.projects = []
+    
+    def save_projects(self):
+        """Save projects to configuration."""
+        try:
+            projects_data = [project.to_dict() for project in self.projects]
+            projects_json = json.dumps(projects_data)
+            
+            self.config.set('github', 'projects', projects_json)
+            self.config.save()
+            
+            logger.info(f"Saved {len(self.projects)} projects to configuration")
+        
+        except Exception as e:
+            logger.error(f"Error saving projects: {e}")
     
     def clear_all_notifications(self):
         """Clear all notifications for all projects."""
         for project in self.projects:
             project.clear_notifications()
+        
         self.save_projects()
-    
-    def get_projects_file_path(self):
-        """Get the path to the projects file."""
-        config_dir = os.path.expanduser("~/.toolkit")
-        os.makedirs(config_dir, exist_ok=True)
-        return os.path.join(config_dir, "github_projects.json")
-    
-    def load_projects(self):
-        """Load projects from file."""
-        try:
-            file_path = self.get_projects_file_path()
-            if not os.path.exists(file_path):
-                return
-            
-            with open(file_path, 'r') as f:
-                data = json.load(f)
-            
-            self.projects = []
-            for project_data in data:
-                project = GitHubProject.from_dict(project_data)
-                self.projects.append(project)
-            
-            logger.info(f"Loaded {len(self.projects)} GitHub projects")
-        
-        except Exception as e:
-            logger.error(f"Error loading GitHub projects: {e}")
-    
-    def save_projects(self):
-        """Save projects to file."""
-        try:
-            file_path = self.get_projects_file_path()
-            
-            data = [project.to_dict() for project in self.projects]
-            
-            with open(file_path, 'w') as f:
-                json.dump(data, f, indent=2)
-            
-            logger.info(f"Saved {len(self.projects)} GitHub projects")
-        
-        except Exception as e:
-            logger.error(f"Error saving GitHub projects: {e}")
-    
-    def validate_credentials(self) -> Tuple[bool, str]:
-        """Validate GitHub credentials."""
-        if not self.token:
-            return False, "No GitHub token provided"
-        
-        try:
-            github = Github(self.token)
-            user = github.get_user()
-            username = user.login
-            
-            return True, f"Authenticated as {username}"
-        
-        except Exception as e:
-            return False, f"Authentication failed: {e}"
