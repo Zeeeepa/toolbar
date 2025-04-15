@@ -1,0 +1,45 @@
+{
+    "id": "templateprompt",
+    "name": "Prompt Template Manager",
+    "version": "1.0.0",
+    "description": "Manages and applies prompt templates for AI interactions.",
+    "author": "Toolbar Team",
+    "plugin_type": "utility",
+    "main_class": "PromptTemplatePlugin",
+    "dependencies": [],
+    "min_toolbar_version": "1.0.0",
+    "max_toolbar_version": "*",
+    "settings_schema": {
+        "templates_directory": {
+            "type": "string",
+            "description": "Directory to store templates",
+            "default": ""
+        },
+        "default_variables": {
+            "type": "object",
+            "description": "Default variables to use in templates",
+            "default": {}
+        },
+        "clipboard_integration": {
+            "type": "boolean",
+            "description": "Automatically copy filled templates to clipboard",
+            "default": true
+        },
+        "ai_providers": {
+            "type": "array",
+            "description": "List of AI providers to integrate with",
+            "default": [
+                {
+                    "name": "OpenAI",
+                    "enabled": true,
+                    "api_key": ""
+                },
+                {
+                    "name": "Anthropic",
+                    "enabled": false,
+                    "api_key": ""
+                }
+            ]
+        }
+    }
+}
