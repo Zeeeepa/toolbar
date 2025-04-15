@@ -26,7 +26,6 @@ from PyQt5.QtWidgets import QApplication, QMessageBox, QSplashScreen
 # Import custom modules
 from Toolbar.core.config import Config, get_config_instance
 from Toolbar.core.plugin_system import PluginManager
-from Toolbar.plugins.automationmanager.ui.script_toolbar_ui import ScriptToolbar
 
 # Set up logging
 logging.basicConfig(
@@ -79,12 +78,18 @@ def main():
         # Add plugin directories
         plugin_manager.add_plugin_directory(os.path.join(os.path.dirname(__file__), "plugins"))
         
-        # Load plugins
-        plugin_manager.load_plugins()
-        logger.info("Plugins loaded")
-        
-        # Create and show the toolbar
+        # Load plugins with error handling
         try:
+            plugin_manager.load_plugins()
+            logger.info("Plugins loaded")
+        except Exception as e:
+            logger.error(f"Error loading plugins: {e}", exc_info=True)
+            # Continue execution even if plugins fail to load
+            
+        # Import ScriptToolbar here to avoid circular imports
+        try:
+            from Toolbar.plugins.automationmanager.ui.script_toolbar_ui import ScriptToolbar
+            # Create and show the toolbar
             toolbar = ScriptToolbar(config, plugin_manager)
             
             # First show attempt
