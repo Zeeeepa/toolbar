@@ -2,7 +2,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="toolkit",
+    name="toolbar",
     version="1.0.0",
     description="A modular taskbar application with plugin support",
     author="Zeeeepa",
@@ -21,7 +21,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "toolbar=toolkit.toolbar.main:main",
+            "toolbar=Toolbar.cli:cli_main",
         ],
     },
     classifiers=[
