@@ -4,13 +4,14 @@ This module provides the base classes and interfaces for creating plugins.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Type
+from typing import Dict, List, Optional, Type, Tuple
 import importlib
 import pkgutil
 import os
 import sys
 import logging
 import traceback
+import importlib.util
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -60,6 +61,26 @@ class PluginManager:
         if os.path.isdir(directory) and directory not in self.plugin_dirs:
             self.plugin_dirs.append(directory)
     
+    def _safe_import_module(self, module_name: str) -> Tuple[Optional[object], Optional[str]]:
+        """
+        Safely import a module and return it, or an error message if it fails.
+        
+        Args:
+            module_name: The name of the module to import
+            
+        Returns:
+            Tuple of (module, error_message)
+            If successful, module is the imported module and error_message is None
+            If failed, module is None and error_message contains the error
+        """
+        try:
+            module = importlib.import_module(module_name)
+            return module, None
+        except Exception as e:
+            error_msg = f"Failed to import module {module_name}: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return None, error_msg
+    
     def load_plugins(self) -> None:
         """Load all plugins from the configured directories."""
         for plugin_dir in self.plugin_dirs:
@@ -76,40 +97,45 @@ class PluginManager:
                 if not ispkg:
                     continue  # Skip non-package modules
                 
-                try:
-                    logger.info(f"Loading plugin package: {name}")
-                    module = importlib.import_module(f"Toolbar.plugins.{name}")
-                    
-                    # Look for Plugin subclasses in the module
-                    plugin_classes = []
-                    for item_name in dir(module):
+                # Safely import the module
+                module_name = f"Toolbar.plugins.{name}"
+                module, error = self._safe_import_module(module_name)
+                
+                if error:
+                    self.failed_plugins[name] = error
+                    continue
+                
+                if not module:
+                    continue
+                
+                # Look for Plugin subclasses in the module
+                plugin_classes = []
+                for item_name in dir(module):
+                    try:
                         item = getattr(module, item_name)
                         if (isinstance(item, type) and 
                             issubclass(item, Plugin) and 
                             item != Plugin):
                             plugin_classes.append(item)
-                    
-                    if not plugin_classes:
-                        logger.warning(f"No Plugin subclasses found in {name}")
-                        continue
-                    
-                    # Initialize each plugin class found
-                    for plugin_class in plugin_classes:
-                        try:
-                            logger.info(f"Initializing plugin: {plugin_class.__name__}")
-                            plugin = plugin_class()
-                            plugin.initialize(self.config)
-                            self.plugins[plugin.name] = plugin
-                            logger.info(f"Successfully loaded plugin: {plugin.name} v{plugin.version}")
-                        except Exception as e:
-                            error_msg = f"Failed to initialize plugin {plugin_class.__name__}: {str(e)}"
-                            logger.error(error_msg, exc_info=True)
-                            self.failed_plugins[plugin_class.__name__] = error_msg
+                    except Exception as e:
+                        logger.warning(f"Error checking if {item_name} is a Plugin subclass: {e}")
                 
-                except Exception as e:
-                    error_msg = f"Failed to load plugin package {name}: {str(e)}"
-                    logger.error(error_msg, exc_info=True)
-                    self.failed_plugins[name] = error_msg
+                if not plugin_classes:
+                    logger.warning(f"No Plugin subclasses found in {name}")
+                    continue
+                
+                # Initialize each plugin class found
+                for plugin_class in plugin_classes:
+                    try:
+                        logger.info(f"Initializing plugin: {plugin_class.__name__}")
+                        plugin = plugin_class()
+                        plugin.initialize(self.config)
+                        self.plugins[plugin.name] = plugin
+                        logger.info(f"Successfully loaded plugin: {plugin.name} v{plugin.version}")
+                    except Exception as e:
+                        error_msg = f"Failed to initialize plugin {plugin_class.__name__}: {str(e)}"
+                        logger.error(error_msg, exc_info=True)
+                        self.failed_plugins[plugin_class.__name__] = error_msg
     
     def get_plugin(self, name: str) -> Optional[Plugin]:
         """Get a plugin by name."""
