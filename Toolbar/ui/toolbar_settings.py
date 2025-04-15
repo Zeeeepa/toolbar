@@ -2,283 +2,596 @@
 import os
 import sys
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Any, Optional
 
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, 
-    QComboBox, QCheckBox, QPushButton, QTabWidget, QWidget,
-    QGroupBox, QFormLayout, QSpinBox, QMessageBox, QFileDialog
+    QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QComboBox,
+    QTabWidget, QWidget, QFormLayout, QLineEdit, QSpinBox, QDoubleSpinBox,
+    QCheckBox, QGroupBox, QRadioButton, QButtonGroup, QFileDialog, QMessageBox,
+    QListWidget, QListWidgetItem, QTableWidget, QTableWidgetItem, QHeaderView
 )
-from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QSettings, QSize
+from PyQt5.QtGui import QIcon, QFont
 
 logger = logging.getLogger(__name__)
 
 class ToolbarSettingsDialog(QDialog):
-    """Settings dialog for the Toolbar application."""
+    """Dialog for toolbar settings."""
     
     def __init__(self, config, parent=None):
-        """
-        Initialize the settings dialog.
-        
-        Args:
-            config: Configuration object
-            parent: Parent widget
-        """
+        """Initialize the dialog."""
         super().__init__(parent)
         self.config = config
         
-        # Set dialog properties
         self.setWindowTitle("Toolbar Settings")
-        self.setMinimumSize(500, 400)
+        self.setMinimumSize(600, 400)
         
         # Create layout
-        self.layout = QVBoxLayout(self)
+        layout = QVBoxLayout(self)
         
         # Create tab widget
-        self.tab_widget = QTabWidget()
-        self.layout.addWidget(self.tab_widget)
+        tab_widget = QTabWidget()
+        layout.addWidget(tab_widget)
         
-        # Create tabs
-        self._create_general_tab()
-        self._create_github_tab()
-        self._create_linear_tab()
-        self._create_plugins_tab()
-        self._create_appearance_tab()
+        # Create general tab
+        general_tab = QWidget()
+        tab_widget.addTab(general_tab, "General")
+        self._create_general_tab(general_tab)
+        
+        # Create appearance tab
+        appearance_tab = QWidget()
+        tab_widget.addTab(appearance_tab, "Appearance")
+        self._create_appearance_tab(appearance_tab)
+        
+        # Create plugins tab
+        plugins_tab = QWidget()
+        tab_widget.addTab(plugins_tab, "Plugins")
+        self._create_plugins_tab(plugins_tab)
+        
+        # Create locations tab
+        locations_tab = QWidget()
+        tab_widget.addTab(locations_tab, "Locations")
+        self._create_locations_tab(locations_tab)
         
         # Create buttons
-        self._create_buttons()
-        
-        logger.info("Settings dialog initialized")
-    
-    def _create_general_tab(self):
-        """Create general settings tab."""
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        
-        # Create general settings group
-        group = QGroupBox("General Settings")
-        group_layout = QFormLayout(group)
-        
-        # Create auto-start checkbox
-        self.auto_start_checkbox = QCheckBox("Start on system boot")
-        self.auto_start_checkbox.setChecked(self.config.get_setting("auto_start", False))
-        group_layout.addRow("", self.auto_start_checkbox)
-        
-        # Create minimize to tray checkbox
-        self.minimize_to_tray_checkbox = QCheckBox("Minimize to system tray")
-        self.minimize_to_tray_checkbox.setChecked(self.config.get_setting("minimize_to_tray", True))
-        group_layout.addRow("", self.minimize_to_tray_checkbox)
-        
-        layout.addWidget(group)
-        
-        # Add tab
-        self.tab_widget.addTab(tab, "General")
-    
-    def _create_github_tab(self):
-        """Create GitHub settings tab."""
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        
-        # Create GitHub settings group
-        group = QGroupBox("GitHub Settings")
-        group_layout = QFormLayout(group)
-        
-        # Create token field
-        self.github_token_field = QLineEdit()
-        self.github_token_field.setText(self.config.get_setting("github.token", ""))
-        self.github_token_field.setEchoMode(QLineEdit.Password)
-        group_layout.addRow("API Token:", self.github_token_field)
-        
-        # Create username field
-        self.github_username_field = QLineEdit()
-        self.github_username_field.setText(self.config.get_setting("github.username", ""))
-        group_layout.addRow("Username:", self.github_username_field)
-        
-        layout.addWidget(group)
-        
-        # Add tab
-        self.tab_widget.addTab(tab, "GitHub")
-    
-    def _create_linear_tab(self):
-        """Create Linear settings tab."""
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        
-        # Create Linear settings group
-        group = QGroupBox("Linear Settings")
-        group_layout = QFormLayout(group)
-        
-        # Create API key field
-        self.linear_api_key_field = QLineEdit()
-        self.linear_api_key_field.setText(self.config.get_setting("linear.api_key", ""))
-        self.linear_api_key_field.setEchoMode(QLineEdit.Password)
-        group_layout.addRow("API Key:", self.linear_api_key_field)
-        
-        # Create team ID field
-        self.linear_team_id_field = QLineEdit()
-        self.linear_team_id_field.setText(self.config.get_setting("linear.team_id", ""))
-        group_layout.addRow("Team ID:", self.linear_team_id_field)
-        
-        layout.addWidget(group)
-        
-        # Add tab
-        self.tab_widget.addTab(tab, "Linear")
-    
-    def _create_plugins_tab(self):
-        """Create plugins settings tab."""
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        
-        # Create plugins settings group
-        group = QGroupBox("Plugin Settings")
-        group_layout = QVBoxLayout(group)
-        
-        # Create plugin checkboxes
-        self.plugin_checkboxes = {}
-        
-        # Get enabled and disabled plugins
-        enabled_plugins = self.config.get_setting("plugins.enabled", [])
-        disabled_plugins = self.config.get_setting("plugins.disabled", [])
-        
-        # Get all plugins
-        plugins = {}
-        for plugin_dir in self.config.get_setting("plugins.directories", []):
-            if os.path.isdir(plugin_dir):
-                for item in os.listdir(plugin_dir):
-                    item_path = os.path.join(plugin_dir, item)
-                    if os.path.isdir(item_path) and not item.startswith("."):
-                        plugins[item] = item_path
-        
-        # Add checkboxes for each plugin
-        for name, path in plugins.items():
-            checkbox = QCheckBox(name)
-            checkbox.setChecked(name not in disabled_plugins)
-            self.plugin_checkboxes[name] = checkbox
-            group_layout.addWidget(checkbox)
-        
-        group_layout.addStretch()
-        layout.addWidget(group)
-        
-        # Add tab
-        self.tab_widget.addTab(tab, "Plugins")
-    
-    def _create_appearance_tab(self):
-        """Create appearance settings tab."""
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        
-        # Create appearance settings group
-        group = QGroupBox("Appearance Settings")
-        group_layout = QFormLayout(group)
-        
-        # Create theme combo box
-        self.theme_combo = QComboBox()
-        self.theme_combo.addItems(["System", "Light", "Dark"])
-        theme = self.config.get_setting("ui.theme", "system")
-        if theme.lower() == "light":
-            self.theme_combo.setCurrentIndex(1)
-        elif theme.lower() == "dark":
-            self.theme_combo.setCurrentIndex(2)
-        else:
-            self.theme_combo.setCurrentIndex(0)
-        group_layout.addRow("Theme:", self.theme_combo)
-        
-        # Create font size spin box
-        self.font_size_spin = QSpinBox()
-        self.font_size_spin.setRange(8, 24)
-        self.font_size_spin.setValue(self.config.get_setting("ui.font_size", 12))
-        group_layout.addRow("Font Size:", self.font_size_spin)
-        
-        # Create toolbar position combo box
-        self.position_combo = QComboBox()
-        self.position_combo.addItems(["Top", "Bottom", "Left", "Right", "Center"])
-        position = self.config.get_setting("ui.toolbar_position", "top")
-        if position.lower() == "bottom":
-            self.position_combo.setCurrentIndex(1)
-        elif position.lower() == "left":
-            self.position_combo.setCurrentIndex(2)
-        elif position.lower() == "right":
-            self.position_combo.setCurrentIndex(3)
-        elif position.lower() == "center":
-            self.position_combo.setCurrentIndex(4)
-        else:
-            self.position_combo.setCurrentIndex(0)
-        group_layout.addRow("Toolbar Position:", self.position_combo)
-        
-        layout.addWidget(group)
-        
-        # Add tab
-        self.tab_widget.addTab(tab, "Appearance")
-    
-    def _create_buttons(self):
-        """Create dialog buttons."""
         button_layout = QHBoxLayout()
+        layout.addLayout(button_layout)
         
-        # Create save button
+        # Add save button
         save_button = QPushButton("Save")
-        save_button.clicked.connect(self._save_settings)
+        save_button.clicked.connect(self.save_settings)
         button_layout.addWidget(save_button)
         
-        # Create cancel button
+        # Add cancel button
         cancel_button = QPushButton("Cancel")
         cancel_button.clicked.connect(self.reject)
         button_layout.addWidget(cancel_button)
         
-        self.layout.addLayout(button_layout)
+        # Load settings
+        self.load_settings()
     
-    def _save_settings(self):
-        """Save settings."""
-        try:
-            # Save general settings
-            self.config.set_setting("auto_start", self.auto_start_checkbox.isChecked())
-            self.config.set_setting("minimize_to_tray", self.minimize_to_tray_checkbox.isChecked())
+    def _create_general_tab(self, tab):
+        """Create the general settings tab."""
+        layout = QVBoxLayout(tab)
+        
+        # Create form layout
+        form_layout = QFormLayout()
+        layout.addLayout(form_layout)
+        
+        # Add auto start setting
+        self.auto_start_checkbox = QCheckBox("Start on system boot")
+        form_layout.addRow("Auto Start:", self.auto_start_checkbox)
+        
+        # Add minimize to tray setting
+        self.minimize_to_tray_checkbox = QCheckBox("Minimize to system tray")
+        form_layout.addRow("Minimize to Tray:", self.minimize_to_tray_checkbox)
+        
+        # Add stay on top setting
+        self.stay_on_top_checkbox = QCheckBox("Keep toolbar on top of other windows")
+        form_layout.addRow("Stay on Top:", self.stay_on_top_checkbox)
+        
+        # Add spacer
+        layout.addStretch()
+    
+    def _create_appearance_tab(self, tab):
+        """Create the appearance settings tab."""
+        layout = QVBoxLayout(tab)
+        
+        # Create form layout
+        form_layout = QFormLayout()
+        layout.addLayout(form_layout)
+        
+        # Add position setting
+        self.position_combo = QComboBox()
+        self.position_combo.addItems(["Top", "Bottom", "Left", "Right"])
+        form_layout.addRow("Position:", self.position_combo)
+        
+        # Add opacity setting
+        self.opacity_spin = QDoubleSpinBox()
+        self.opacity_spin.setRange(0.1, 1.0)
+        self.opacity_spin.setSingleStep(0.1)
+        self.opacity_spin.setDecimals(1)
+        form_layout.addRow("Opacity:", self.opacity_spin)
+        
+        # Add theme setting
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(["System", "Light", "Dark"])
+        form_layout.addRow("Theme:", self.theme_combo)
+        
+        # Add spacer
+        layout.addStretch()
+    
+    def _create_plugins_tab(self, tab):
+        """Create the plugins settings tab."""
+        layout = QVBoxLayout(tab)
+        
+        # Add enhanced plugin system setting
+        self.enhanced_plugins_checkbox = QCheckBox("Use enhanced plugin system")
+        self.enhanced_plugins_checkbox.setToolTip("Enable the enhanced plugin system with additional features")
+        layout.addWidget(self.enhanced_plugins_checkbox)
+        
+        # Add auto-discovery setting
+        self.auto_discovery_checkbox = QCheckBox("Enable plugin auto-discovery")
+        self.auto_discovery_checkbox.setToolTip("Automatically discover and load plugins from plugin directories")
+        layout.addWidget(self.auto_discovery_checkbox)
+        
+        # Add plugin directories section
+        layout.addWidget(QLabel("Plugin Directories:"))
+        
+        # Create plugin directories list
+        self.plugin_dirs_list = QListWidget()
+        layout.addWidget(self.plugin_dirs_list)
+        
+        # Add plugin directory buttons
+        dir_buttons_layout = QHBoxLayout()
+        layout.addLayout(dir_buttons_layout)
+        
+        # Add add directory button
+        add_dir_button = QPushButton("Add Directory")
+        add_dir_button.clicked.connect(self._add_plugin_directory)
+        dir_buttons_layout.addWidget(add_dir_button)
+        
+        # Add remove directory button
+        remove_dir_button = QPushButton("Remove Directory")
+        remove_dir_button.clicked.connect(self._remove_plugin_directory)
+        dir_buttons_layout.addWidget(remove_dir_button)
+        
+        # Add spacer
+        layout.addStretch()
+    
+    def _create_locations_tab(self, tab):
+        """Create the locations settings tab."""
+        layout = QVBoxLayout(tab)
+        
+        # Add locations table
+        layout.addWidget(QLabel("Plugin Locations:"))
+        
+        # Create locations table
+        self.locations_table = QTableWidget(0, 4)
+        self.locations_table.setHorizontalHeaderLabels(["ID", "Name", "Path", "Enabled"])
+        self.locations_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        layout.addWidget(self.locations_table)
+        
+        # Add location buttons
+        loc_buttons_layout = QHBoxLayout()
+        layout.addLayout(loc_buttons_layout)
+        
+        # Add add location button
+        add_loc_button = QPushButton("Add Location")
+        add_loc_button.clicked.connect(self._add_location)
+        loc_buttons_layout.addWidget(add_loc_button)
+        
+        # Add edit location button
+        edit_loc_button = QPushButton("Edit Location")
+        edit_loc_button.clicked.connect(self._edit_location)
+        loc_buttons_layout.addWidget(edit_loc_button)
+        
+        # Add remove location button
+        remove_loc_button = QPushButton("Remove Location")
+        remove_loc_button.clicked.connect(self._remove_location)
+        loc_buttons_layout.addWidget(remove_loc_button)
+        
+        # Add spacer
+        layout.addStretch()
+    
+    def _add_plugin_directory(self):
+        """Add a plugin directory."""
+        directory = QFileDialog.getExistingDirectory(
+            self,
+            "Select Plugin Directory",
+            os.path.expanduser("~")
+        )
+        
+        if directory:
+            # Check if directory already exists
+            for i in range(self.plugin_dirs_list.count()):
+                if self.plugin_dirs_list.item(i).text() == directory:
+                    QMessageBox.warning(
+                        self,
+                        "Duplicate Directory",
+                        f"Directory {directory} is already in the list."
+                    )
+                    return
             
-            # Save GitHub settings
-            self.config.set_setting("github.token", self.github_token_field.text())
-            self.config.set_setting("github.username", self.github_username_field.text())
+            # Add directory to list
+            self.plugin_dirs_list.addItem(directory)
+    
+    def _remove_plugin_directory(self):
+        """Remove a plugin directory."""
+        selected_items = self.plugin_dirs_list.selectedItems()
+        if not selected_items:
+            return
+        
+        # Remove selected items
+        for item in selected_items:
+            self.plugin_dirs_list.takeItem(self.plugin_dirs_list.row(item))
+    
+    def _add_location(self):
+        """Add a plugin location."""
+        # Create a dialog for location details
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Add Plugin Location")
+        dialog.setMinimumWidth(400)
+        
+        # Create layout
+        layout = QVBoxLayout(dialog)
+        
+        # Create form layout
+        form_layout = QFormLayout()
+        layout.addLayout(form_layout)
+        
+        # Add ID field
+        id_edit = QLineEdit()
+        form_layout.addRow("ID:", id_edit)
+        
+        # Add name field
+        name_edit = QLineEdit()
+        form_layout.addRow("Name:", name_edit)
+        
+        # Add path field
+        path_layout = QHBoxLayout()
+        path_edit = QLineEdit()
+        path_layout.addWidget(path_edit)
+        
+        # Add browse button
+        browse_button = QPushButton("Browse")
+        browse_button.clicked.connect(lambda: self._browse_location_path(path_edit))
+        path_layout.addWidget(browse_button)
+        
+        form_layout.addRow("Path:", path_layout)
+        
+        # Add enabled checkbox
+        enabled_checkbox = QCheckBox("Enabled")
+        enabled_checkbox.setChecked(True)
+        form_layout.addRow("", enabled_checkbox)
+        
+        # Add auto-discover checkbox
+        auto_discover_checkbox = QCheckBox("Auto-discover plugins")
+        auto_discover_checkbox.setChecked(True)
+        form_layout.addRow("", auto_discover_checkbox)
+        
+        # Add priority field
+        priority_spin = QSpinBox()
+        priority_spin.setRange(1, 1000)
+        priority_spin.setValue(100)
+        form_layout.addRow("Priority:", priority_spin)
+        
+        # Add buttons
+        button_layout = QHBoxLayout()
+        layout.addLayout(button_layout)
+        
+        # Add OK button
+        ok_button = QPushButton("OK")
+        ok_button.clicked.connect(dialog.accept)
+        button_layout.addWidget(ok_button)
+        
+        # Add cancel button
+        cancel_button = QPushButton("Cancel")
+        cancel_button.clicked.connect(dialog.reject)
+        button_layout.addWidget(cancel_button)
+        
+        # Show dialog
+        if dialog.exec_() == QDialog.Accepted:
+            # Get values
+            location_id = id_edit.text()
+            name = name_edit.text()
+            path = path_edit.text()
+            enabled = enabled_checkbox.isChecked()
+            auto_discover = auto_discover_checkbox.isChecked()
+            priority = priority_spin.value()
             
-            # Save Linear settings
-            self.config.set_setting("linear.api_key", self.linear_api_key_field.text())
-            self.config.set_setting("linear.team_id", self.linear_team_id_field.text())
+            # Validate values
+            if not location_id:
+                QMessageBox.warning(self, "Validation Error", "ID is required")
+                return
             
-            # Save plugin settings
-            for name, checkbox in self.plugin_checkboxes.items():
-                if checkbox.isChecked():
-                    self.config.enable_plugin(name)
-                else:
-                    self.config.disable_plugin(name)
+            if not name:
+                QMessageBox.warning(self, "Validation Error", "Name is required")
+                return
             
-            # Save appearance settings
-            theme_index = self.theme_combo.currentIndex()
-            if theme_index == 1:
-                self.config.set_setting("ui.theme", "light")
-            elif theme_index == 2:
-                self.config.set_setting("ui.theme", "dark")
-            else:
-                self.config.set_setting("ui.theme", "system")
+            if not path:
+                QMessageBox.warning(self, "Validation Error", "Path is required")
+                return
             
-            self.config.set_setting("ui.font_size", self.font_size_spin.value())
+            # Check if ID already exists
+            for row in range(self.locations_table.rowCount()):
+                if self.locations_table.item(row, 0).text() == location_id:
+                    QMessageBox.warning(
+                        self,
+                        "Duplicate ID",
+                        f"Location ID {location_id} already exists."
+                    )
+                    return
             
-            position_index = self.position_combo.currentIndex()
-            if position_index == 1:
-                self.config.set_setting("ui.toolbar_position", "bottom")
-            elif position_index == 2:
-                self.config.set_setting("ui.toolbar_position", "left")
-            elif position_index == 3:
-                self.config.set_setting("ui.toolbar_position", "right")
-            elif position_index == 4:
-                self.config.set_setting("ui.toolbar_position", "center")
-            else:
-                self.config.set_setting("ui.toolbar_position", "top")
+            # Add location to table
+            row = self.locations_table.rowCount()
+            self.locations_table.insertRow(row)
             
-            # Save configuration
-            self.config.save()
+            # Add ID cell
+            id_item = QTableWidgetItem(location_id)
+            self.locations_table.setItem(row, 0, id_item)
             
-            logger.info("Settings saved")
+            # Add name cell
+            name_item = QTableWidgetItem(name)
+            self.locations_table.setItem(row, 1, name_item)
             
-            # Close dialog
-            self.accept()
-        except Exception as e:
-            logger.error(f"Error saving settings: {e}", exc_info=True)
-            QMessageBox.critical(self, "Save Error", f"Error saving settings: {str(e)}")
+            # Add path cell
+            path_item = QTableWidgetItem(path)
+            self.locations_table.setItem(row, 2, path_item)
+            
+            # Add enabled cell
+            enabled_item = QTableWidgetItem("Yes" if enabled else "No")
+            self.locations_table.setItem(row, 3, enabled_item)
+            
+            # Store additional data
+            id_item.setData(Qt.UserRole, {
+                "id": location_id,
+                "name": name,
+                "path": path,
+                "enabled": enabled,
+                "auto_discover": auto_discover,
+                "priority": priority
+            })
+    
+    def _edit_location(self):
+        """Edit a plugin location."""
+        selected_items = self.locations_table.selectedItems()
+        if not selected_items:
+            return
+        
+        # Get the row
+        row = selected_items[0].row()
+        
+        # Get the location data
+        id_item = self.locations_table.item(row, 0)
+        location_data = id_item.data(Qt.UserRole)
+        
+        # Create a dialog for location details
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Edit Plugin Location")
+        dialog.setMinimumWidth(400)
+        
+        # Create layout
+        layout = QVBoxLayout(dialog)
+        
+        # Create form layout
+        form_layout = QFormLayout()
+        layout.addLayout(form_layout)
+        
+        # Add ID field
+        id_edit = QLineEdit(location_data["id"])
+        id_edit.setReadOnly(True)  # ID cannot be changed
+        form_layout.addRow("ID:", id_edit)
+        
+        # Add name field
+        name_edit = QLineEdit(location_data["name"])
+        form_layout.addRow("Name:", name_edit)
+        
+        # Add path field
+        path_layout = QHBoxLayout()
+        path_edit = QLineEdit(location_data["path"])
+        path_layout.addWidget(path_edit)
+        
+        # Add browse button
+        browse_button = QPushButton("Browse")
+        browse_button.clicked.connect(lambda: self._browse_location_path(path_edit))
+        path_layout.addWidget(browse_button)
+        
+        form_layout.addRow("Path:", path_layout)
+        
+        # Add enabled checkbox
+        enabled_checkbox = QCheckBox("Enabled")
+        enabled_checkbox.setChecked(location_data["enabled"])
+        form_layout.addRow("", enabled_checkbox)
+        
+        # Add auto-discover checkbox
+        auto_discover_checkbox = QCheckBox("Auto-discover plugins")
+        auto_discover_checkbox.setChecked(location_data["auto_discover"])
+        form_layout.addRow("", auto_discover_checkbox)
+        
+        # Add priority field
+        priority_spin = QSpinBox()
+        priority_spin.setRange(1, 1000)
+        priority_spin.setValue(location_data["priority"])
+        form_layout.addRow("Priority:", priority_spin)
+        
+        # Add buttons
+        button_layout = QHBoxLayout()
+        layout.addLayout(button_layout)
+        
+        # Add OK button
+        ok_button = QPushButton("OK")
+        ok_button.clicked.connect(dialog.accept)
+        button_layout.addWidget(ok_button)
+        
+        # Add cancel button
+        cancel_button = QPushButton("Cancel")
+        cancel_button.clicked.connect(dialog.reject)
+        button_layout.addWidget(cancel_button)
+        
+        # Show dialog
+        if dialog.exec_() == QDialog.Accepted:
+            # Get values
+            name = name_edit.text()
+            path = path_edit.text()
+            enabled = enabled_checkbox.isChecked()
+            auto_discover = auto_discover_checkbox.isChecked()
+            priority = priority_spin.value()
+            
+            # Validate values
+            if not name:
+                QMessageBox.warning(self, "Validation Error", "Name is required")
+                return
+            
+            if not path:
+                QMessageBox.warning(self, "Validation Error", "Path is required")
+                return
+            
+            # Update location in table
+            name_item = self.locations_table.item(row, 1)
+            name_item.setText(name)
+            
+            path_item = self.locations_table.item(row, 2)
+            path_item.setText(path)
+            
+            enabled_item = self.locations_table.item(row, 3)
+            enabled_item.setText("Yes" if enabled else "No")
+            
+            # Update additional data
+            id_item.setData(Qt.UserRole, {
+                "id": location_data["id"],
+                "name": name,
+                "path": path,
+                "enabled": enabled,
+                "auto_discover": auto_discover,
+                "priority": priority
+            })
+    
+    def _remove_location(self):
+        """Remove a plugin location."""
+        selected_items = self.locations_table.selectedItems()
+        if not selected_items:
+            return
+        
+        # Get the row
+        row = selected_items[0].row()
+        
+        # Get the location ID
+        location_id = self.locations_table.item(row, 0).text()
+        
+        # Confirm deletion
+        if QMessageBox.question(
+            self,
+            "Confirm Deletion",
+            f"Are you sure you want to delete location {location_id}?",
+            QMessageBox.Yes | QMessageBox.No
+        ) != QMessageBox.Yes:
+            return
+        
+        # Remove the row
+        self.locations_table.removeRow(row)
+    
+    def _browse_location_path(self, path_edit):
+        """Browse for a location path."""
+        directory = QFileDialog.getExistingDirectory(
+            self,
+            "Select Plugin Location Directory",
+            path_edit.text() or os.path.expanduser("~")
+        )
+        
+        if directory:
+            path_edit.setText(directory)
+    
+    def load_settings(self):
+        """Load settings from configuration."""
+        # Load general settings
+        self.auto_start_checkbox.setChecked(self.config.get_setting("auto_start", False))
+        self.minimize_to_tray_checkbox.setChecked(self.config.get_setting("ui.minimize_to_tray", True))
+        self.stay_on_top_checkbox.setChecked(self.config.get_setting("ui.stay_on_top", True))
+        
+        # Load appearance settings
+        position = self.config.get_setting("ui.position", "top")
+        self.position_combo.setCurrentText(position.capitalize())
+        
+        opacity = float(self.config.get_setting("ui.opacity", 0.9))
+        self.opacity_spin.setValue(opacity)
+        
+        theme = self.config.get_setting("ui.theme", "System")
+        self.theme_combo.setCurrentText(theme)
+        
+        # Load plugin settings
+        self.enhanced_plugins_checkbox.setChecked(self.config.get_setting("plugins.use_enhanced", True))
+        self.auto_discovery_checkbox.setChecked(self.config.get_setting("plugins.auto_discovery", True))
+        
+        # Load plugin directories
+        plugin_dirs = self.config.get_setting("plugins.directories", [])
+        self.plugin_dirs_list.clear()
+        for directory in plugin_dirs:
+            self.plugin_dirs_list.addItem(directory)
+        
+        # Load plugin locations
+        locations = self.config.get_setting("plugins.locations", [])
+        self.locations_table.setRowCount(0)
+        for location in locations:
+            row = self.locations_table.rowCount()
+            self.locations_table.insertRow(row)
+            
+            # Add ID cell
+            id_item = QTableWidgetItem(location.get("id", ""))
+            self.locations_table.setItem(row, 0, id_item)
+            
+            # Add name cell
+            name_item = QTableWidgetItem(location.get("name", ""))
+            self.locations_table.setItem(row, 1, name_item)
+            
+            # Add path cell
+            path_item = QTableWidgetItem(location.get("path", ""))
+            self.locations_table.setItem(row, 2, path_item)
+            
+            # Add enabled cell
+            enabled_item = QTableWidgetItem("Yes" if location.get("enabled", True) else "No")
+            self.locations_table.setItem(row, 3, enabled_item)
+            
+            # Store additional data
+            id_item.setData(Qt.UserRole, location)
+    
+    def save_settings(self):
+        """Save settings to configuration."""
+        # Save general settings
+        self.config.set_setting("auto_start", self.auto_start_checkbox.isChecked())
+        self.config.set_setting("ui.minimize_to_tray", self.minimize_to_tray_checkbox.isChecked())
+        self.config.set_setting("ui.stay_on_top", self.stay_on_top_checkbox.isChecked())
+        
+        # Save appearance settings
+        position = self.position_combo.currentText().lower()
+        self.config.set_setting("ui.position", position)
+        
+        opacity = self.opacity_spin.value()
+        self.config.set_setting("ui.opacity", opacity)
+        
+        theme = self.theme_combo.currentText()
+        self.config.set_setting("ui.theme", theme)
+        
+        # Save plugin settings
+        self.config.set_setting("plugins.use_enhanced", self.enhanced_plugins_checkbox.isChecked())
+        self.config.set_setting("plugins.auto_discovery", self.auto_discovery_checkbox.isChecked())
+        
+        # Save plugin directories
+        plugin_dirs = []
+        for i in range(self.plugin_dirs_list.count()):
+            plugin_dirs.append(self.plugin_dirs_list.item(i).text())
+        self.config.set_setting("plugins.directories", plugin_dirs)
+        
+        # Save plugin locations
+        locations = []
+        for row in range(self.locations_table.rowCount()):
+            id_item = self.locations_table.item(row, 0)
+            location_data = id_item.data(Qt.UserRole)
+            locations.append(location_data)
+        self.config.set_setting("plugins.locations", locations)
+        
+        # Save configuration
+        self.config.save()
+        
+        # Accept dialog
+        self.accept()
