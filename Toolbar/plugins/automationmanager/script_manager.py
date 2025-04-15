@@ -1,186 +1,166 @@
 import os
-import sys
 import subprocess
+import json
+import logging
 import warnings
-import shutil
+import platform
+import sys
 
 class ScriptManager:
     """
-    Manages script operations including adding, running, editing, and deleting scripts.
+    Manages script execution and configuration.
+    This class handles running scripts, editing them, and managing their metadata.
     """
+    
     def __init__(self, config):
         """
         Initialize the script manager.
         
         Args:
-            config (Config): Application configuration
+            config: Configuration object
         """
         self.config = config
-        self.scripts_folder = config.scripts_folder
-        
-        # Ensure scripts folder exists
-        if not os.path.exists(self.scripts_folder):
-            os.makedirs(self.scripts_folder)
+        self.logger = logging.getLogger(__name__)
     
-    def get_scripts(self):
-        """
-        Get all configured scripts.
-        
-        Returns:
-            list: List of script data dictionaries
-        """
-        return self.config.get_scripts()
-    
-    def add_script(self, file_path, script_name, icon_path=None):
-        """
-        Add a script to the toolbar.
-        
-        Args:
-            file_path (str): Path to the script file
-            script_name (str): Name to display for the script
-            icon_path (str, optional): Path to the icon file
-            
-        Returns:
-            dict: Script data dictionary
-        """
-        # Store original path
-        original_path = os.path.abspath(file_path)
-            
-        # Copy script to scripts folder
-        script_destination = os.path.join(self.scripts_folder, os.path.basename(file_path))
-        try:
-            with open(file_path, 'r') as src_file:
-                content = src_file.read()
-                
-            with open(script_destination, 'w') as dest_file:
-                dest_file.write(content)
-        except Exception as e:
-            warnings.warn(f"Failed to copy script: {str(e)}")
-            return None
-        
-        # Create script data
-        script_data = {
-            'name': script_name,
-            'path': script_destination,
-            'original_path': original_path,
-            'icon_path': icon_path
-        }
-        
-        # Add to configuration
-        self.config.add_script(script_data)
-        
-        return script_data
-    
-    def run_script(self, script_path, original_path=None):
+    def run_script(self, path):
         """
         Run a script.
         
         Args:
-            script_path (str): Path to the script in the scripts folder
-            original_path (str, optional): Original path of the script
-            
-        Returns:
-            bool: True if successful, False otherwise
+            path (str): Path to the script
         """
         try:
-            # Normalize paths to avoid directory name issues
-            if script_path:
-                script_path = os.path.normpath(script_path)
-            if original_path:
-                original_path = os.path.normpath(original_path)
+            # Check if the script exists
+            if not os.path.exists(path):
+                warnings.warn(f"Script not found: {path}")
+                return
             
-            # Get the directory of the original script
-            working_dir = None
-            script_to_run = None
-            
-            # Check if original file still exists and use it if possible
-            if original_path and os.path.exists(original_path):
-                script_to_run = original_path
-                working_dir = os.path.dirname(original_path)
-            else:
-                # If original doesn't exist, run from the copied version in scripts folder
-                script_to_run = script_path
-                working_dir = os.path.dirname(script_path)
-            
-            # Ensure working directory exists
-            if not os.path.exists(working_dir):
-                working_dir = os.getcwd()
+            # Get the script extension
+            _, ext = os.path.splitext(path)
             
             # Run the script based on its extension
-            if script_to_run.endswith('.py'):
-                subprocess.Popen([sys.executable, script_to_run], cwd=working_dir)
-            elif script_to_run.endswith('.bat'):
-                if os.name == 'nt':  # Windows
-                    subprocess.Popen([script_to_run], shell=True, cwd=working_dir)
-                else:
-                    warnings.warn("Batch files can only be run on Windows")
-                    return False
+            if ext.lower() == '.py':
+                # Run Python script
+                subprocess.Popen([sys.executable, path])
+            elif ext.lower() == '.sh' and platform.system() != 'Windows':
+                # Run shell script on non-Windows systems
+                subprocess.Popen(['bash', path])
+            elif ext.lower() == '.bat' and platform.system() == 'Windows':
+                # Run batch script on Windows
+                subprocess.Popen([path], shell=True)
             else:
-                subprocess.Popen([script_to_run], cwd=working_dir)
-            return True
+                # Run as executable
+                if platform.system() == 'Windows':
+                    subprocess.Popen([path], shell=True)
+                else:
+                    subprocess.Popen([path])
         except Exception as e:
-            warnings.warn(f"Failed to run script: {str(e)}")
-            return False
+            self.logger.error(f"Error running script {path}: {e}")
+            warnings.warn(f"Error running script: {e}")
     
-    def edit_script(self, script_path):
+    def edit_script(self, path):
         """
-        Open a script in the default editor.
+        Edit a script.
         
         Args:
-            script_path (str): Path to the script
-            
-        Returns:
-            bool: True if successful, False otherwise
+            path (str): Path to the script
         """
         try:
-            # Try to use default system editor
-            if os.name == 'nt':  # Windows
-                os.startfile(script_path)
-            else:  # macOS and Linux
-                subprocess.Popen(['xdg-open', script_path])
-            return True
+            # Check if the script exists
+            if not os.path.exists(path):
+                warnings.warn(f"Script not found: {path}")
+                return
+            
+            # Get the editor from configuration
+            editor = self.config.get('scripts', 'editor', None)
+            
+            if editor:
+                # Use the configured editor
+                subprocess.Popen([editor, path])
+            else:
+                # Use the default system editor
+                if platform.system() == 'Windows':
+                    os.startfile(path)
+                elif platform.system() == 'Darwin':  # macOS
+                    subprocess.Popen(['open', path])
+                else:  # Linux and other Unix-like
+                    subprocess.Popen(['xdg-open', path])
         except Exception as e:
-            warnings.warn(f"Failed to open editor: {str(e)}")
-            return False
+            self.logger.error(f"Error editing script {path}: {e}")
+            warnings.warn(f"Error editing script: {e}")
     
-    def delete_script(self, script_path, delete_file=False):
+    def add_script(self, path, name, description=""):
         """
-        Delete a script from the toolbar.
+        Add a script to the configuration.
         
         Args:
-            script_path (str): Path to the script
-            delete_file (bool, optional): Whether to delete the file as well
-            
+            path (str): Path to the script
+            name (str): Name of the script
+            description (str, optional): Description of the script
+        
         Returns:
-            bool: True if successful, False otherwise
-        """
-        # Remove from configuration
-        self.config.remove_script(script_path)
-        
-        # Delete file if requested
-        if delete_file:
-            try:
-                os.remove(script_path)
-            except Exception as e:
-                warnings.warn(f"Failed to delete file: {str(e)}")
-                return False
-        
-        return True
-    
-    def update_script_icon(self, script_path, icon_path):
-        """
-        Update a script's icon.
-        
-        Args:
-            script_path (str): Path to the script
-            icon_path (str): Path to the new icon
-            
-        Returns:
-            bool: True if successful, False otherwise
+            dict: Script data
         """
         try:
-            self.config.update_script(script_path, {'icon_path': icon_path})
-            return True
+            # Create script data
+            script_data = {
+                'path': path,
+                'name': name,
+                'description': description
+            }
+            
+            # Add to configuration
+            scripts = self.config.get_scripts()
+            scripts.append(script_data)
+            self.config.set_scripts(scripts)
+            
+            return script_data
         except Exception as e:
-            warnings.warn(f"Failed to update script icon: {str(e)}")
-            return False
+            self.logger.error(f"Error adding script {path}: {e}")
+            warnings.warn(f"Error adding script: {e}")
+            return None
+    
+    def update_script_icon(self, path, icon_path):
+        """
+        Update the icon of a script.
+        
+        Args:
+            path (str): Path to the script
+            icon_path (str): Path to the icon
+        """
+        try:
+            # Get scripts from configuration
+            scripts = self.config.get_scripts()
+            
+            # Find the script
+            for script in scripts:
+                if script.get('path') == path:
+                    # Update icon
+                    script['icon'] = icon_path
+                    break
+            
+            # Save changes
+            self.config.set_scripts(scripts)
+        except Exception as e:
+            self.logger.error(f"Error updating script icon {path}: {e}")
+            warnings.warn(f"Error updating script icon: {e}")
+    
+    def delete_script(self, path):
+        """
+        Delete a script from the configuration.
+        
+        Args:
+            path (str): Path to the script
+        """
+        try:
+            # Get scripts from configuration
+            scripts = self.config.get_scripts()
+            
+            # Filter out the script to delete
+            scripts = [s for s in scripts if s.get('path') != path]
+            
+            # Save changes
+            self.config.set_scripts(scripts)
+        except Exception as e:
+            self.logger.error(f"Error deleting script {path}: {e}")
+            warnings.warn(f"Error deleting script: {e}")

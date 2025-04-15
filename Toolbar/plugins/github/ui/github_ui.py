@@ -6,9 +6,10 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
 from PyQt5.QtGui import QIcon, QCursor
 from PyQt5.QtCore import Qt, pyqtSignal
 
+# Update import to use the core/github_manager module
 from Toolbar.core.github_manager import GitHubManager
-from Toolbar.ui.github_project_ui import ProjectWidget, GitHubProjectsDialog
-from Toolbar.ui.github_settings import GitHubSettingsDialog
+from Toolbar.plugins.github.ui.github_project_ui import ProjectWidget, GitHubProjectsDialog
+from Toolbar.plugins.github.ui.github_settings import GitHubSettingsDialog
 
 class NotificationWidget(QWidget):
     """Widget for displaying a GitHub notification."""

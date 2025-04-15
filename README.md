@@ -1,159 +1,107 @@
 # Toolbar
 
-A modular toolbar application with plugin support for various integrations.
+A customizable toolbar application for running scripts and integrating with GitHub and Linear.
 
 ## Features
 
-- Plugin-based architecture for easy extensibility
-- GitHub integration (via plugin)
-- Linear integration (via plugin)
-- Script management (via plugin)
-- Prompt templates (via plugin)
-- Customizable UI - Settings of toolbar
+- Run scripts with a single click
+- Monitor GitHub repositories and notifications
+- Integrate with Linear for issue tracking
+- Customizable UI with various settings
+- Plugin-based architecture for extensibility
 
+## Installation
 
-Create a `.env` file in the project root with the following variables:
+### Prerequisites
 
-```env
-# GitHub Configuration
-GITHUB_USERNAME=your_github_username
-GITHUB_TOKEN=your_github_token
-NGROK_AUTH_TOKEN=your_ngrok_token
+- Python 3.6 or higher
+- PyQt5
+- Required Python packages (see requirements.txt)
 
-# Linear Configuration
-LINEAR_API_KEY=your_linear_api_key
-```
+### Install from Source
 
-### Plugin Configuration
-
-Each plugin can be configured through the toolbar's settings dialog. Plugins are loaded from the `Toolbar/plugins` directory.
-
-# Extensible Toolbar
-
-A toolbar utility for quick access to plugin modules like  GitHub linear, scriptautomation, prompttemplates.
-
-## Features
-
-- Transparent topbar that stays on top of other windows
-- Allows adding programs as launchable shortcuts. (.py, .bat mostly)
-- Drag-and-drop reordering of scripts
-
-- Action/command recorder for automating repetitive tasks
-- Export recorded actions as Python scripts or batch files
-
+1. Clone the repository:
+   ```
+   git clone https://github.com/Zeeeepa/toolkit.git
+   cd toolkit
    ```
 
-## GitHub Plugin
+2. Install the required dependencies:
+   ```
+   pip install -r Toolbar/requirements.txt
+   ```
 
-- GitHub integration for PR and branch notifications
-- GitHub Projects integration with notification badges
-The toolbar provides real-time notifications for:
-- New pull requests
-- New branches
-- Pull request review requests
+3. Install the package:
+   ```
+   pip install -e .
+   ```
 
-1. Click the "GitHub" button in the toolbar
-2. Enter your GitHub username and personal access token
-3. Click "Validate" to test your credentials
-4. Click "Save" to store your credentials
+## Usage
 
-### Notification Features
+### Running the Toolbar
 
-- **Notification Badge**: Shows the number of unread notifications
-- **Notification Panel**: Click the badge to show/hide the notification panel
-- **Notification Cards**: Each notification appears as a card with:
-  - Icon indicating the type (PR, new branch)
-  - Title of the PR or branch
-  - Repository name and timestamp
-  - "NEW" badge for recent notifications
-  
-### Interacting with Notifications
+You can run the toolbar using the provided script:
 
-- **Left-click** on a notification to open it in your browser
-- **Hover** over a notification to see more details
-- **Right-click** on a notification for options:
-  - Open in Browser: Open the PR or branch in your browser
-  - Dismiss: Remove the notification
+```
+python run_toolbar.py
+```
 
-### GitHub Projects
+Or, if you installed the package:
 
-The toolbar now includes a GitHub Projects feature that allows you to:
+```
+toolbar
+```
 
-- Pin your favorite GitHub repositories to the toolbar
-- See notifications for specific projects
-- Quickly access project pages and notifications
+### Adding Scripts
 
-#### Setting Up GitHub Projects
-
-1. Click the "Manage Projects" button in the projects toolbar
-2. Check the repositories you want to pin to the toolbar
-3. Click "Close" to save your changes
-
-#### Project Features
-
-- **Project Icons**: Each pinned project appears as an icon in the toolbar
-- **Notification Badges**: Shows the number of unread notifications for each project
-- **Quick Access**: Click on a project icon to open its GitHub page
-- **Contextual Notifications**: When a project has notifications, clicking the icon opens the first notification
-
-#### Interacting with Projects
-
-- **Left-click** on a project icon to:
-  - Open the first notification if there are any
-  - Open the project page if there are no notifications
-- **Right-click** on a project icon for options:
-  - Open Project: Open the project page in your browser
-  - Notifications: View and open specific notifications
-  - Clear Notifications: Clear all notifications for this project
-  - Unpin Project: Remove the project from the toolbar
-
-
-### Notification Behavior
-
-Notifications will:
-- Be cleared when you click on them to open in browser
-
-## Action Recorder
-
-The Action Recorder allows you to record mouse movements, clicks, keyboard inputs, and commands, then save them as scripts that can be added to the toolbar.
-
-### How to Use the Action Recorder
-
-1. Click the "Record Actions" button in the toolbar
-2. Click "Start Recording" to begin capturing your actions
-3. Perform the actions you want to record (mouse movements, clicks, keyboard inputs)
-4. Press Esc or click "Stop Recording" to finish recording
-5. Edit your recorded actions:
-   - Double-click an action to edit its properties
-   - Use the "Add Delay" button to add pauses between actions
-   - Use the "Add Command" button to insert shell commands
-   - Use the context menu (right-click) for more options
-6. Click "Export as Script" to save your actions as a Python script or batch file
-7. Choose whether to add the script to the toolbar
-
-### Action Types
-
-- **Mouse Movements**: Records cursor position changes
-- **Mouse Clicks**: Records button clicks and their screen positions
-- **Keyboard Inputs**: Records key presses and releases
-- **Delays**: Adds pauses between actions
-- **Commands**: Executes shell commands
-
-## Adding Scripts to the Toolbar
-
-1. Click the "Add Script" button in the toolbar
-2. Select a Python script (.py) or batch file (.bat)
+1. Click the "Add Script" button on the toolbar
+2. Select a script file from your computer
 3. Enter a name for the script
-4. Choose an icon (optional)
+4. The script will be added to the toolbar
 
-## Customizing the Toolbar
+### GitHub Integration
 
-- **Reordering Scripts**: Drag and drop script buttons to change their order
-- **Editing Scripts**: Right-click a script button and select "Edit Script"
-- **Changing Icons**: Right-click a script button and select "Edit Icon"
-- **Removing Scripts**: Right-click a script button and select "Delete Script"
+1. Click the GitHub button on the toolbar
+2. Enter your GitHub token in the settings dialog
+3. Configure webhook settings if needed
+4. Pin repositories to monitor
+
+### Linear Integration
+
+1. Click the Linear button on the toolbar
+2. Enter your Linear API key in the settings dialog
+3. Configure issue tracking settings
+
+## Configuration
+
+The toolbar can be configured through the settings dialog or by editing the configuration file directly.
+
+### UI Settings
+
+- Position: Top, bottom, left, or right
+- Opacity: Adjust the transparency of the toolbar
+- Stay on top: Keep the toolbar above other windows
+
+### Script Settings
+
+- Editor: Choose the editor to use for editing scripts
+- Scripts folder: Set the folder where scripts are stored
+
+## Plugin Development
+
+The toolbar uses a plugin-based architecture, making it easy to extend its functionality.
+
+### Creating a Plugin
+
+1. Create a new folder in the `Toolbar/plugins` directory
+2. Create an `__init__.py` file with a class that inherits from `Plugin`
+3. Implement the required methods: `initialize`, `cleanup`, `name`, `version`, and `description`
 
 ## License
 
-This project is open source and available under the MIT License.
+This project is licensed under the MIT License - see the LICENSE file for details.
 
+## Acknowledgements
+
+- PyQt5 for the UI framework
+- GitHub and Linear for their APIs
