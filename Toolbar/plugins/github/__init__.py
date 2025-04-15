@@ -3,7 +3,7 @@ GitHub integration plugin for the Toolbar application.
 """
 
 from Toolbar.core.plugin_system import Plugin
-from Toolbar.core.github.monitor import GitHubMonitor
+from Toolbar.core.github import GitHubMonitor
 from Toolbar.core.github_manager import GitHubManager
 
 class GitHubPlugin(Plugin):
@@ -47,4 +47,4 @@ class GitHubPlugin(Plugin):
     
     @property
     def description(self) -> str:
-        return "Provides GitHub repository monitoring and webhook functionality." 
+        return "Provides GitHub repository monitoring and webhook functionality."
