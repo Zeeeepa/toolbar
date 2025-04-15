@@ -1,4 +1,4 @@
-# Toolkit - Taskbar Application
+# Toolbar - Taskbar Application
 
 A modular taskbar application with plugin support, built with Python and PyQt5.
 
@@ -19,32 +19,45 @@ A modular taskbar application with plugin support, built with Python and PyQt5.
 - Python 3.8 or higher
 - pip (Python package manager)
 
-### Option 1: Install from Source
+### Option 1: Install with pip
+
+The easiest way to install Toolbar is using pip:
+
+```bash
+# Install directly from the repository
+pip install git+https://github.com/Zeeeepa/toolbar.git
+
+# Or install in development mode
+pip install -e .
+```
+
+After installation, you can start the application by running:
+
+```bash
+toolbar
+```
+
+### Option 2: Install from Source
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/Zeeeepa/toolkit.git
-   cd toolkit
+   git clone https://github.com/Zeeeepa/toolbar.git
+   cd toolbar
    ```
 
 2. Install the package:
    ```bash
-   python install_toolkit.py
+   pip install -e .
    ```
 
-   This will install the toolkit and its dependencies, create a desktop shortcut, and set up autostart.
+   This will install the toolbar and its dependencies in development mode.
 
-   Additional options:
-   - `--dev`: Install in development mode
-   - `--no-shortcut`: Skip desktop shortcut creation
-   - `--no-autostart`: Skip autostart setup
+### Option 3: Run Without Installing
 
-### Option 2: Run Without Installing
-
-If you prefer to run the application without installing it, you can use the provided run script:
+If you prefer to run the application without installing it, you can run the main module directly:
 
 ```bash
-python run_toolkit.py
+python -m Toolbar.main
 ```
 
 ## Usage
@@ -54,9 +67,7 @@ python run_toolkit.py
 After installation, you can start the application in several ways:
 
 - Run the `toolbar` command in your terminal
-- Use the desktop shortcut created during installation
-- Run `python -m toolkit.toolbar.main`
-- Use the run script: `python run_toolkit.py`
+- Run `python -m Toolbar.main`
 
 ### Interface
 
@@ -88,18 +99,20 @@ You can add applications to the taskbar in several ways:
 
 ### Plugins
 
-The toolkit supports plugins to extend its functionality. Several plugins are included:
+The toolbar supports plugins to extend its functionality. Several plugins are included:
 
-- **Example Plugin**: Demonstrates the plugin system
 - **GitHub Plugin**: Integrates with GitHub repositories
 - **Linear Plugin**: Integrates with Linear issue tracking
+- **Template Prompt Plugin**: Manages template prompts
+- **Auto Scripting Plugin**: Automates tasks
+- **Events Plugin**: Manages event-driven workflows
 
 #### Creating Plugins
 
 You can create your own plugins by implementing the `Plugin` interface:
 
 ```python
-from toolkit.toolbar.core.plugin_system import Plugin
+from Toolbar.core.plugin_system import Plugin
 
 class MyPlugin(Plugin):
     def __init__(self):
@@ -139,15 +152,15 @@ class MyPlugin(Plugin):
         return "My custom plugin"
 ```
 
-Place your plugin in a subdirectory of the `toolkit/toolbar/plugins` directory or in a custom plugin directory specified in the configuration.
+Place your plugin in a subdirectory of the `Toolbar/plugins` directory or in a custom plugin directory specified in the configuration.
 
 ## Configuration
 
-The toolkit configuration is stored in a JSON file in the user's configuration directory:
+The toolbar configuration is stored in a JSON file in the user's configuration directory:
 
-- Windows: `%APPDATA%\toolkit\config.json`
-- macOS: `~/Library/Application Support/toolkit/config.json`
-- Linux: `~/.config/toolkit/config.json`
+- Windows: `%APPDATA%\toolbar\config.json`
+- macOS: `~/Library/Application Support/toolbar/config.json`
+- Linux: `~/.config/toolbar/config.json`
 
 You can modify the configuration directly or through the settings dialog in the application.
 
@@ -156,28 +169,30 @@ You can modify the configuration directly or through the settings dialog in the 
 ### Project Structure
 
 ```
-toolkit/
-├── install_toolkit.py      # Installation script
-├── run_toolkit.py          # Run script
+toolbar/
+├── __init__.py             # Root package
 ├── setup.py                # Package setup
-├── toolkit/                # Main package
+├── Toolbar/                # Main package
 │   ├── __init__.py
-│   └── toolbar/            # Toolbar package
+│   ├── cli.py              # Command-line interface
+│   ├── core/               # Core functionality
+│   │   ├── __init__.py
+│   │   ├── config.py       # Configuration management
+│   │   ├── plugin_system.py  # Plugin system
+│   │   └── enhanced_plugin_system.py  # Enhanced plugin system
+│   ├── main.py             # Entry point
+│   ├── plugins/            # Plugins
+│   │   ├── __init__.py
+│   │   ├── github/         # GitHub plugin
+│   │   ├── linear/         # Linear plugin
+│   │   ├── templateprompt/ # Template prompt plugin
+│   │   ├── autoscripting/  # Auto scripting plugin
+│   │   └── events/         # Events plugin
+│   └── ui/                 # User interface
 │       ├── __init__.py
-│       ├── core/           # Core functionality
-│       │   ├── __init__.py
-│       │   ├── config.py   # Configuration management
-│       │   └── plugin_system.py  # Plugin system
-│       ├── main.py         # Entry point
-│       ├── plugins/        # Plugins
-│       │   ├── __init__.py
-│       │   └── example/    # Example plugin
-│       │       └── __init__.py
-│       └── ui/             # User interface
-│           ├── __init__.py
-│           ├── notification_widget.py
-│           ├── toolbar_settings.py
-│           └── toolbar_ui.py  # Main UI
+│       ├── notification_widget.py
+│       ├── toolbar_settings.py
+│       └── toolbar_ui.py   # Main UI
 ```
 
 ### Building
