@@ -34,6 +34,7 @@ from PyQt5.QtCore import Qt
 try:
     from Toolbar.core.config import Config, get_config_instance
     from Toolbar.core.plugin_system import PluginManager, Plugin, PluginType, PluginState
+    from Toolbar.core.enhanced_plugin_system import EnhancedPluginManager
     from Toolbar.ui.toolbar_ui import ToolbarUI  # Import the ToolbarUI class from ui module
 except ImportError as e:
     # Log the error
@@ -121,6 +122,9 @@ except ImportError as e:
             self.setWindowTitle("Fallback Toolbar")
             self.config = config
             self.plugin_manager = plugin_manager
+    
+    class EnhancedPluginManager(PluginManager):
+        pass
 
 # Set up logging
 logging.basicConfig(
@@ -488,9 +492,22 @@ def main():
             show_error_dialog("Configuration Error", f"Failed to load configuration: {str(e)}")
             return 1
         
-        # Initialize plugin manager
+        # Initialize plugin manager - use enhanced version if available
         try:
-            plugin_manager = PluginManager(config)
+            # Check if we should use the enhanced plugin manager
+            use_enhanced = config.get_setting("plugins.use_enhanced", True)
+            
+            if use_enhanced:
+                try:
+                    plugin_manager = EnhancedPluginManager(config)
+                    logger.info("Using enhanced plugin manager")
+                except Exception as e:
+                    logger.error(f"Failed to initialize enhanced plugin manager: {e}", exc_info=True)
+                    logger.info("Falling back to standard plugin manager")
+                    plugin_manager = PluginManager(config)
+            else:
+                plugin_manager = PluginManager(config)
+            
             plugin_manager.load_plugins()
             logger.info("Plugins loaded")
         except Exception as e:
