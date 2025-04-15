@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (
     QLineEdit, QComboBox, QCheckBox, QGroupBox, QScrollArea, QTextEdit
 )
 from PyQt5.QtGui import QIcon, QCursor, QKeySequence, QColor, QPalette, QStandardItemModel, QStandardItem
-from PyQt5.QtCore import Qt, QSize, pyqtSignal, QTimer, QModelIndex
+from PyQt5.QtCore import Qt, QSize, pyqtSignal, QTimer, QModelIndex, QRect
 
 # Import from Toolbar modules
 from Toolbar.ui.toolbar_settings import ToolbarSettingsDialog
@@ -47,24 +47,36 @@ class Toolbar(QMainWindow):
         
         # Set window properties
         self.setWindowTitle("Toolbar")
-        self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.Tool)
-        self.setMinimumSize(800, 50)
+        
+        # Get position and opacity from config
+        self.position = self.config.get('ui', 'position', 'top')
+        self.opacity = float(self.config.get('ui', 'opacity', 0.9))
+        self.stay_on_top = self.config.get('ui', 'stay_on_top', True)
+        
+        # Set window flags based on configuration
+        self._update_window_flags()
+        
+        # Set window opacity
+        self.setWindowOpacity(self.opacity)
         
         # Create central widget
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         
-        # Create main layout
-        self.main_layout = QVBoxLayout(self.central_widget)
-        self.main_layout.setContentsMargins(2, 2, 2, 2)
-        self.main_layout.setSpacing(2)
+        # Create main layout based on position
+        self._create_layout()
         
         # Create toolbar
         self.toolbar = QToolBar()
         self.toolbar.setMovable(False)
         self.toolbar.setFloatable(False)
         self.toolbar.setIconSize(QSize(24, 24))
-        self.addToolBar(self.toolbar)
+        
+        # Add toolbar to appropriate position
+        if self.position in ['top', 'bottom']:
+            self.addToolBar(Qt.TopToolBarArea if self.position == 'top' else Qt.BottomToolBarArea, self.toolbar)
+        else:
+            self.addToolBar(Qt.LeftToolBarArea if self.position == 'left' else Qt.RightToolBarArea, self.toolbar)
         
         # Create status bar
         self.status_bar = self.statusBar()
@@ -87,11 +99,45 @@ class Toolbar(QMainWindow):
         
         logger.info("Toolbar initialized")
     
+    def _update_window_flags(self):
+        """Update window flags based on configuration."""
+        flags = Qt.Tool  # Base flag for toolbar-like window
+        
+        if self.stay_on_top:
+            flags |= Qt.WindowStaysOnTopHint
+        
+        self.setWindowFlags(flags)
+    
+    def _create_layout(self):
+        """Create the main layout based on position."""
+        if self.position in ['top', 'bottom']:
+            # Horizontal layout for top/bottom positions
+            self.main_layout = QVBoxLayout(self.central_widget)
+            self.setMinimumSize(800, 50)
+        else:
+            # Vertical layout for left/right positions
+            self.main_layout = QHBoxLayout(self.central_widget)
+            self.setMinimumSize(50, 600)
+        
+        self.main_layout.setContentsMargins(2, 2, 2, 2)
+        self.main_layout.setSpacing(2)
+    
     def _init_ui(self):
         """Initialize the UI components."""
         try:
             # Create main tab widget
             self.tab_widget = QTabWidget()
+            
+            # Set tab position based on toolbar position
+            if self.position == 'bottom':
+                self.tab_widget.setTabPosition(QTabWidget.South)
+            elif self.position == 'left':
+                self.tab_widget.setTabPosition(QTabWidget.West)
+            elif self.position == 'right':
+                self.tab_widget.setTabPosition(QTabWidget.East)
+            else:  # default to top
+                self.tab_widget.setTabPosition(QTabWidget.North)
+            
             self.main_layout.addWidget(self.tab_widget)
             
             # Create GitHub tab
@@ -239,139 +285,82 @@ class Toolbar(QMainWindow):
                 item.setData(Qt.UserRole, name)
                 self.plugins_list.addItem(item)
             
-            # Initialize GitHub UI if available
-            if "GitHubPlugin" in self.plugins:
-                try:
-                    from Toolbar.plugins.github.ui.github_ui import GitHubUI
-                    from Toolbar.plugins.github.ui.github_project_ui import GitHubProjectsDialog
-                    
-                    self.github_ui = GitHubUI(self.plugins["GitHubPlugin"], self)
-                    self.github_projects_dialog = GitHubProjectsDialog(self.plugins["GitHubPlugin"], self)
-                    
-                    # Connect GitHub UI signals
-                    self._connect_github_signals()
-                    
-                    logger.info("GitHub UI initialized")
-                except Exception as e:
-                    logger.error(f"Error initializing GitHub UI: {e}", exc_info=True)
-            
-            # Initialize Linear UI if available
-            if "LinearPlugin" in self.plugins:
-                try:
-                    from Toolbar.plugins.linear.linear_settings import LinearSettingsDialog
-                    
-                    self.linear_ui = LinearSettingsDialog(self.config, self)
-                    
-                    logger.info("Linear UI initialized")
-                except Exception as e:
-                    logger.error(f"Error initializing Linear UI: {e}", exc_info=True)
-            
-            # Initialize other plugin UIs
+            # Initialize plugin UIs
             for name, plugin in self.plugins.items():
-                if name not in ["GitHubPlugin", "LinearPlugin"]:
-                    try:
-                        if hasattr(plugin, "get_ui"):
-                            ui = plugin.get_ui(self)
-                            if ui:
-                                self.plugin_uis[name] = ui
-                                logger.info(f"UI for plugin {name} initialized")
-                    except Exception as e:
-                        logger.error(f"Error initializing UI for plugin {name}: {e}", exc_info=True)
+                try:
+                    if hasattr(plugin, "get_ui"):
+                        ui = plugin.get_ui(self)
+                        if ui:
+                            self.plugin_uis[name] = ui
+                            
+                            # Check for specific plugins
+                            if name == "GitHubPlugin":
+                                self.github_ui = ui
+                            elif name == "LinearPlugin":
+                                self.linear_ui = ui
+                except Exception as e:
+                    logger.error(f"Error initializing UI for plugin {name}: {e}", exc_info=True)
             
-            logger.info("Plugins loaded")
+            logger.info(f"Loaded {len(self.plugins)} plugins")
         except Exception as e:
             logger.error(f"Error loading plugins: {e}", exc_info=True)
-            raise
     
     def _position_toolbar(self):
-        """Position the toolbar on the screen."""
+        """Position the toolbar on the screen based on settings."""
         try:
             # Get screen geometry
             screen = QDesktopWidget().screenGeometry()
             
-            # Get toolbar geometry
-            toolbar_geometry = self.geometry()
+            # Calculate position based on toolbar position setting
+            if self.position == "top":
+                x = (screen.width() - self.width()) // 2
+                y = 0
+                self.setGeometry(x, y, self.width(), self.height())
+            elif self.position == "bottom":
+                x = (screen.width() - self.width()) // 2
+                y = screen.height() - self.height()
+                self.setGeometry(x, y, self.width(), self.height())
+            elif self.position == "left":
+                x = 0
+                y = (screen.height() - self.height()) // 2
+                self.setGeometry(x, y, self.width(), self.height())
+            elif self.position == "right":
+                x = screen.width() - self.width()
+                y = (screen.height() - self.height()) // 2
+                self.setGeometry(x, y, self.width(), self.height())
+            else:
+                # Default to center
+                x = (screen.width() - self.width()) // 2
+                y = (screen.height() - self.height()) // 2
+                self.setGeometry(x, y, self.width(), self.height())
             
-            # Position at the top center of the screen
-            x = (screen.width() - toolbar_geometry.width()) // 2
-            y = 0
-            
-            # Set position
-            self.move(x, y)
-            
-            logger.info(f"Toolbar positioned at ({x}, {y})")
+            logger.info(f"Positioned toolbar at {self.geometry().x()}, {self.geometry().y()}, {self.width()}x{self.height()}")
         except Exception as e:
             logger.error(f"Error positioning toolbar: {e}", exc_info=True)
     
     def _auto_save(self):
         """Auto-save configuration."""
         try:
-            # Save configuration
-            self.config.save()
+            self.config.save_config()
             logger.debug("Configuration auto-saved")
         except Exception as e:
             logger.error(f"Error auto-saving configuration: {e}", exc_info=True)
-    
-    def _connect_github_signals(self):
-        """Connect GitHub UI signals."""
-        if self.github_ui:
-            try:
-                # Connect signals
-                self.github_ui.repositories_updated.connect(self._update_repo_tree)
-                self.github_ui.prs_updated.connect(self._update_pr_list)
-                
-                logger.info("GitHub signals connected")
-            except Exception as e:
-                logger.error(f"Error connecting GitHub signals: {e}", exc_info=True)
-    
-    def _update_repo_tree(self, repos):
-        """Update repository tree view."""
-        try:
-            # Clear model
-            self.repo_model.clear()
-            self.repo_model.setHorizontalHeaderLabels(["Repositories"])
-            
-            # Add repositories
-            for repo in repos:
-                item = QStandardItem(repo["name"])
-                item.setData(repo, Qt.UserRole)
-                self.repo_model.appendRow(item)
-            
-            logger.info(f"Repository tree updated with {len(repos)} repositories")
-        except Exception as e:
-            logger.error(f"Error updating repository tree: {e}", exc_info=True)
-    
-    def _update_pr_list(self, prs):
-        """Update PR list view."""
-        try:
-            # Clear list
-            self.pr_list.clear()
-            
-            # Add PRs
-            for pr in prs:
-                item = QListWidgetItem(f"#{pr['number']} - {pr['title']}")
-                item.setData(Qt.UserRole, pr)
-                self.pr_list.addItem(item)
-            
-            logger.info(f"PR list updated with {len(prs)} PRs")
-        except Exception as e:
-            logger.error(f"Error updating PR list: {e}", exc_info=True)
     
     def _repo_selected(self, index):
         """Handle repository selection."""
         try:
             # Get repository data
             item = self.repo_model.itemFromIndex(index)
-            repo = item.data(Qt.UserRole)
+            repo_data = item.data(Qt.UserRole)
             
-            # Update status
-            self.status_label.setText(f"Selected repository: {repo['name']}")
-            
-            # Refresh PRs for this repository
-            if self.github_ui:
-                self.github_ui.refresh_prs(repo["name"])
-            
-            logger.info(f"Repository selected: {repo['name']}")
+            if repo_data:
+                # Update PR list
+                self.pr_list.clear()
+                
+                # Update status
+                self.status_label.setText(f"Selected repository: {repo_data['name']}")
+                
+                logger.info(f"Repository selected: {repo_data['name']}")
         except Exception as e:
             logger.error(f"Error handling repository selection: {e}", exc_info=True)
     
@@ -566,11 +555,70 @@ class Toolbar(QMainWindow):
         """Show settings dialog."""
         try:
             settings_dialog = ToolbarSettingsDialog(self.config, self)
-            settings_dialog.exec_()
+            if settings_dialog.exec_():
+                # Apply settings if dialog was accepted
+                self._apply_settings()
             logger.info("Settings dialog shown")
         except Exception as e:
             logger.error(f"Error showing settings dialog: {e}", exc_info=True)
             QMessageBox.critical(self, "Settings Error", f"Error showing settings dialog: {str(e)}")
+    
+    def _apply_settings(self):
+        """Apply settings from configuration."""
+        try:
+            # Get updated settings
+            new_position = self.config.get('ui', 'position', 'top')
+            new_opacity = float(self.config.get('ui', 'opacity', 0.9))
+            new_stay_on_top = self.config.get('ui', 'stay_on_top', True)
+            
+            # Check if position changed
+            position_changed = new_position != self.position
+            
+            # Update instance variables
+            self.position = new_position
+            self.opacity = new_opacity
+            self.stay_on_top = new_stay_on_top
+            
+            # Apply opacity
+            self.setWindowOpacity(self.opacity)
+            
+            # Update window flags
+            self._update_window_flags()
+            
+            # If position changed, recreate the layout
+            if position_changed:
+                # Store the current size
+                current_size = self.size()
+                
+                # Remove all widgets from the layout
+                while self.main_layout.count():
+                    item = self.main_layout.takeAt(0)
+                    if item.widget():
+                        item.widget().setParent(None)
+                
+                # Recreate the layout
+                self._create_layout()
+                
+                # Re-add the tab widget
+                self.main_layout.addWidget(self.tab_widget)
+                
+                # Update tab position
+                if self.position == 'bottom':
+                    self.tab_widget.setTabPosition(QTabWidget.South)
+                elif self.position == 'left':
+                    self.tab_widget.setTabPosition(QTabWidget.West)
+                elif self.position == 'right':
+                    self.tab_widget.setTabPosition(QTabWidget.East)
+                else:  # default to top
+                    self.tab_widget.setTabPosition(QTabWidget.North)
+                
+                # Reposition the toolbar
+                self._position_toolbar()
+            
+            logger.info(f"Applied settings: position={self.position}, opacity={self.opacity}, stay_on_top={self.stay_on_top}")
+        except Exception as e:
+            logger.error(f"Error applying settings: {e}", exc_info=True)
+            QMessageBox.critical(self, "Settings Error", f"Error applying settings: {str(e)}")
     
     def _show_linear_settings(self):
         """Show Linear settings dialog."""
@@ -590,7 +638,7 @@ class Toolbar(QMainWindow):
         """Handle close event."""
         try:
             # Save configuration
-            self.config.save()
+            self.config.save_config()
             
             # Clean up plugins
             for name, plugin in self.plugins.items():
