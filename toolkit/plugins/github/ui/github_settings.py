@@ -100,124 +100,132 @@ class GitHubSettingsDialog(QDialog):
         
         # Monitoring interval
         interval_layout = QHBoxLayout()
-        interval_layout.addWidget(QLabel("Check for updates every"))
+        interval_label = QLabel("Check for updates every:")
         self.interval_spinbox = QSpinBox()
         self.interval_spinbox.setMinimum(1)
-        self.interval_spinbox.setMaximum(60)
-        self.interval_spinbox.setValue(5)
-        self.interval_spinbox.setSuffix(" minutes")
+        self.interval_spinbox.setMaximum(3600)
+        self.interval_spinbox.setValue(300)  # Default: 5 minutes
+        self.interval_spinbox.setSuffix(" seconds")
+        interval_layout.addWidget(interval_label)
         interval_layout.addWidget(self.interval_spinbox)
         interval_layout.addStretch()
+        
         notification_layout.addLayout(interval_layout)
         
         general_layout.addWidget(notification_group)
         general_layout.addStretch()
         
-        # Add tabs
         tab_widget.addTab(general_tab, "General")
         
+        # Add tabs to layout
         layout.addWidget(tab_widget)
         
-        # Buttons
+        # Buttons at the bottom
         button_layout = QHBoxLayout()
-        button_layout.addStretch()
         
+        # Save button
         save_button = QPushButton("Save")
         save_button.clicked.connect(self.save_settings)
-        button_layout.addWidget(save_button)
         
+        # Cancel button
         cancel_button = QPushButton("Cancel")
         cancel_button.clicked.connect(self.reject)
+        
+        button_layout.addStretch()
+        button_layout.addWidget(save_button)
         button_layout.addWidget(cancel_button)
         
         layout.addLayout(button_layout)
     
     def load_settings(self):
-        """Load current settings into the dialog."""
+        """Load current settings from configuration."""
         if not self.config:
             return
         
         # Load token
-        self.token_input.setText(self.github_monitor.token or "")
+        token = self.config.get('github', 'token', '')
+        self.token_input.setText(token)
         
         # Load notification settings
-        self.pr_checkbox.setChecked(self.github_monitor.notify_prs)
-        self.branch_checkbox.setChecked(self.github_monitor.notify_branches)
+        notify_prs = self.config.get('github', 'notify_prs', True)
+        notify_branches = self.config.get('github', 'notify_branches', True)
+        
+        self.pr_checkbox.setChecked(notify_prs)
+        self.branch_checkbox.setChecked(notify_branches)
         
         # Load monitoring interval
-        self.interval_spinbox.setValue(self.github_monitor.monitor_interval // 60)
+        interval = self.config.get('github', 'monitor_interval', 300)
+        self.interval_spinbox.setValue(interval)
     
     def save_settings(self):
-        """Save settings from the dialog."""
+        """Save settings to configuration."""
         if not self.config:
             QMessageBox.warning(self, "Error", "Configuration not available")
             return
         
-        try:
-            # Save token
-            token = self.token_input.text().strip()
-            self.config.set('github', 'token', token)
-            
-            # Save notification settings
-            self.config.set('github', 'notify_prs', self.pr_checkbox.isChecked())
-            self.config.set('github', 'notify_branches', self.branch_checkbox.isChecked())
-            
-            # Save monitoring interval
-            interval_minutes = self.interval_spinbox.value()
-            self.config.set('github', 'monitor_interval', interval_minutes * 60)
-            
-            # Save config
-            self.config.save()
-            
-            # Update monitor
-            self.github_monitor.token = token
-            self.github_monitor.notify_prs = self.pr_checkbox.isChecked()
-            self.github_monitor.notify_branches = self.branch_checkbox.isChecked()
-            self.github_monitor.monitor_interval = interval_minutes * 60
-            
-            # Restart monitoring if token is valid
-            if token:
-                self.github_monitor.stop_monitoring()
-                self.github_monitor.github = None
-                
-                # Reinitialize GitHub client
-                from github import Github
-                self.github_monitor.github = Github(token)
-                
-                # Start monitoring
-                self.github_monitor.start_monitoring()
-            else:
-                self.github_monitor.stop_monitoring()
-            
-            QMessageBox.information(self, "Success", "Settings saved successfully")
-            self.accept()
+        # Save token
+        token = self.token_input.text().strip()
+        self.config.set('github', 'token', token)
         
+        # Save notification settings
+        notify_prs = self.pr_checkbox.isChecked()
+        notify_branches = self.branch_checkbox.isChecked()
+        
+        self.config.set('github', 'notify_prs', notify_prs)
+        self.config.set('github', 'notify_branches', notify_branches)
+        
+        # Save monitoring interval
+        interval = self.interval_spinbox.value()
+        self.config.set('github', 'monitor_interval', interval)
+        
+        # Save configuration
+        try:
+            self.config.save()
+            QMessageBox.information(self, "Success", "Settings saved successfully")
+            
+            # Update GitHub monitor
+            if self.github_monitor:
+                self.github_monitor.token = token
+                self.github_monitor.notify_prs = notify_prs
+                self.github_monitor.notify_branches = notify_branches
+                self.github_monitor.monitor_interval = interval
+            
+            self.accept()
         except Exception as e:
-            logger.error(f"Failed to save settings: {e}")
             QMessageBox.warning(self, "Error", f"Failed to save settings: {e}")
     
     def _validate_credentials(self):
         """Validate GitHub credentials."""
         token = self.token_input.text().strip()
+        
         if not token:
             self.token_status.setText("No token provided")
             self.token_status.setStyleSheet("color: gray;")
             return
         
-        try:
-            # Update token in monitor temporarily
-            from github import Github
-            github = Github(token)
-            
-            # Try to get user
-            user = github.get_user()
-            username = user.login
-            
-            # Success
-            self.token_status.setText(f"Authenticated as {username}")
-            self.token_status.setStyleSheet("color: green;")
+        # Update status
+        self.token_status.setText("Validating...")
+        self.token_status.setStyleSheet("color: blue;")
         
-        except Exception as e:
-            logger.error(f"Failed to validate GitHub token: {e}")
-            self.token_status.setText(f"Authentication failed: {str(e)}")
+        # Validate token
+        if self.github_monitor:
+            # Save token temporarily
+            old_token = self.github_monitor.token
+            self.github_monitor.token = token
+            
+            # Validate
+            valid, username = self.github_monitor.validate_credentials()
+            
+            # Restore token
+            self.github_monitor.token = old_token
+            
+            # Update status
+            if valid:
+                self.token_status.setText(f"Valid (User: {username})")
+                self.token_status.setStyleSheet("color: green;")
+            else:
+                self.token_status.setText("Invalid token")
+                self.token_status.setStyleSheet("color: red;")
+        else:
+            self.token_status.setText("Cannot validate (no monitor)")
             self.token_status.setStyleSheet("color: red;")
