@@ -34,6 +34,7 @@ from PyQt5.QtCore import Qt
 try:
     from Toolbar.core.config import Config, get_config_instance
     from Toolbar.core.plugin_system import PluginManager, Plugin
+    from Toolbar.ui.toolbar_ui import Toolbar  # Import the Toolbar class from ui module
 except ImportError as e:
     # Log the error
     print(f"Critical import error: {e}")
@@ -90,6 +91,14 @@ except ImportError as e:
         
         def cleanup(self):
             pass
+    
+    # Define a fallback Toolbar class if the import fails
+    class Toolbar(QMainWindow):
+        def __init__(self, config, plugin_manager):
+            super().__init__()
+            self.setWindowTitle("Fallback Toolbar")
+            self.config = config
+            self.plugin_manager = plugin_manager
 
 # Set up logging
 logging.basicConfig(
