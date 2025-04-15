@@ -1,4 +1,3 @@
-# Toolbar/ui/events/events_ui.py
 #!/usr/bin/env python3
 import os
 import sys
@@ -6,6 +5,7 @@ import json
 import logging
 import uuid
 from typing import Dict, List, Any, Optional, Type, Callable, Set, Union, Tuple
+
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QComboBox,
     QTabWidget, QWidget, QFormLayout, QLineEdit, QSpinBox, QDoubleSpinBox,
@@ -16,11 +16,15 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QSettings, QSize, pyqtSignal, QObject
 from PyQt5.QtGui import QIcon, QFont, QColor, QPalette
+
 from Toolbar.core.events.event_system import (
     EventManager, Event, EventTrigger, Action, Condition, ActionParameter,
     EventType, ActionType
 )
+from Toolbar.plugins.events.ui.node_flow_editor import NodeFlowEditorDialog
+
 logger = logging.getLogger(__name__)
+
 class EventsDialog(QDialog):
     """Dialog for managing events."""
     
@@ -64,6 +68,11 @@ class EventsDialog(QDialog):
         remove_event_button = QPushButton("Remove Event")
         remove_event_button.clicked.connect(self._remove_event)
         events_buttons_layout.addWidget(remove_event_button)
+        
+        # Add visual editor button
+        visual_editor_button = QPushButton("Visual Flow Editor")
+        visual_editor_button.clicked.connect(self._open_visual_editor)
+        events_buttons_layout.addWidget(visual_editor_button)
         
         # Add events widget to splitter
         splitter.addWidget(events_widget)
@@ -260,8 +269,10 @@ class EventsDialog(QDialog):
     
     def _load_events(self):
         """Load events from the event manager."""
+        # Clear the list
         self.events_list.clear()
         
+        # Add events to the list
         for event in self.event_manager.get_all_events():
             item = QListWidgetItem(event.name)
             item.setData(Qt.UserRole, event.id)
@@ -269,96 +280,97 @@ class EventsDialog(QDialog):
     
     def _on_event_selected(self, current, previous):
         """Handle event selection."""
-        if not current:
+        if current:
+            # Enable event details
+            self.event_details_widget.setEnabled(True)
+            
+            # Get the event
+            event_id = current.data(Qt.UserRole)
+            event = self.event_manager.get_event(event_id)
+            
+            if event:
+                # Update event details
+                self.event_name_edit.setText(event.name)
+                self.event_description_edit.setText(event.description)
+                self.event_enabled_checkbox.setChecked(event.enabled)
+                
+                # Update trigger details
+                self.trigger_name_edit.setText(event.trigger.name)
+                index = self.trigger_type_combo.findData(event.trigger.event_type)
+                if index >= 0:
+                    self.trigger_type_combo.setCurrentIndex(index)
+                self.trigger_enabled_checkbox.setChecked(event.trigger.enabled)
+                
+                # Update conditions
+                self.conditions_table.setRowCount(0)
+                for condition in event.trigger.conditions:
+                    row = self.conditions_table.rowCount()
+                    self.conditions_table.insertRow(row)
+                    
+                    field_item = QTableWidgetItem(condition.field)
+                    self.conditions_table.setItem(row, 0, field_item)
+                    
+                    operator_item = QTableWidgetItem(condition.operator)
+                    self.conditions_table.setItem(row, 1, operator_item)
+                    
+                    value_item = QTableWidgetItem(str(condition.value))
+                    self.conditions_table.setItem(row, 2, value_item)
+                
+                # Update actions
+                self.actions_list.clear()
+                for action in event.actions:
+                    item = QListWidgetItem(action.name)
+                    item.setData(Qt.UserRole, action.id)
+                    self.actions_list.addItem(item)
+                
+                # Disable action details
+                self.action_details_group.setEnabled(False)
+        else:
+            # Disable event details
             self.event_details_widget.setEnabled(False)
-            return
-        
-        self.event_details_widget.setEnabled(True)
-        
-        # Get the selected event
-        event_id = current.data(Qt.UserRole)
-        event = self.event_manager.get_event(event_id)
-        
-        if not event:
-            return
-        
-        # Update event details
-        self.event_name_edit.setText(event.name)
-        self.event_description_edit.setText(event.description)
-        self.event_enabled_checkbox.setChecked(event.enabled)
-        
-        # Update trigger details
-        self.trigger_name_edit.setText(event.trigger.name)
-        index = self.trigger_type_combo.findData(event.trigger.event_type)
-        if index >= 0:
-            self.trigger_type_combo.setCurrentIndex(index)
-        self.trigger_enabled_checkbox.setChecked(event.trigger.enabled)
-        
-        # Update conditions
-        self.conditions_table.setRowCount(0)
-        for condition in event.trigger.conditions:
-            row = self.conditions_table.rowCount()
-            self.conditions_table.insertRow(row)
-            
-            field_item = QTableWidgetItem(condition.field)
-            self.conditions_table.setItem(row, 0, field_item)
-            
-            operator_item = QTableWidgetItem(condition.operator)
-            self.conditions_table.setItem(row, 1, operator_item)
-            
-            value_item = QTableWidgetItem(str(condition.value))
-            self.conditions_table.setItem(row, 2, value_item)
-        
-        # Update actions
-        self.actions_list.clear()
-        for action in event.actions:
-            item = QListWidgetItem(action.name)
-            item.setData(Qt.UserRole, action.id)
-            self.actions_list.addItem(item)
-        
-        # Clear action details
-        self.action_details_group.setEnabled(False)
     
     def _on_action_selected(self, current, previous):
         """Handle action selection."""
-        if not current:
+        if current:
+            # Enable action details
+            self.action_details_group.setEnabled(True)
+            
+            # Get the event and action
+            event_item = self.events_list.currentItem()
+            if not event_item:
+                return
+            
+            event_id = event_item.data(Qt.UserRole)
+            event = self.event_manager.get_event(event_id)
+            
+            if not event:
+                return
+            
+            action_id = current.data(Qt.UserRole)
+            action = next((a for a in event.actions if a.id == action_id), None)
+            
+            if action:
+                # Update action details
+                self.action_name_edit.setText(action.name)
+                index = self.action_type_combo.findData(action.action_type)
+                if index >= 0:
+                    self.action_type_combo.setCurrentIndex(index)
+                self.action_enabled_checkbox.setChecked(action.enabled)
+                
+                # Update parameters
+                self.parameters_table.setRowCount(0)
+                for parameter in action.parameters:
+                    row = self.parameters_table.rowCount()
+                    self.parameters_table.insertRow(row)
+                    
+                    name_item = QTableWidgetItem(parameter.name)
+                    self.parameters_table.setItem(row, 0, name_item)
+                    
+                    value_item = QTableWidgetItem(str(parameter.value))
+                    self.parameters_table.setItem(row, 1, value_item)
+        else:
+            # Disable action details
             self.action_details_group.setEnabled(False)
-            return
-        
-        self.action_details_group.setEnabled(True)
-        
-        # Get the selected event
-        event_id = self.events_list.currentItem().data(Qt.UserRole)
-        event = self.event_manager.get_event(event_id)
-        
-        if not event:
-            return
-        
-        # Get the selected action
-        action_id = current.data(Qt.UserRole)
-        action = next((a for a in event.actions if a.id == action_id), None)
-        
-        if not action:
-            return
-        
-        # Update action details
-        self.action_name_edit.setText(action.name)
-        index = self.action_type_combo.findData(action.action_type)
-        if index >= 0:
-            self.action_type_combo.setCurrentIndex(index)
-        self.action_enabled_checkbox.setChecked(action.enabled)
-        
-        # Update parameters
-        self.parameters_table.setRowCount(0)
-        for param in action.parameters:
-            row = self.parameters_table.rowCount()
-            self.parameters_table.insertRow(row)
-            
-            name_item = QTableWidgetItem(param.name)
-            self.parameters_table.setItem(row, 0, name_item)
-            
-            value_item = QTableWidgetItem(str(param.value))
-            self.parameters_table.setItem(row, 1, value_item)
     
     def _on_action_type_changed(self, index):
         """Handle action type change."""
@@ -646,3 +658,28 @@ class EventsDialog(QDialog):
         
         row = selected_items[0].row()
         self.parameters_table.removeRow(row)
+    
+    def _open_visual_editor(self):
+        """Open the visual flow editor."""
+        # Get the current event
+        current_item = self.events_list.currentItem()
+        event = None
+        
+        if current_item:
+            event_id = current_item.data(Qt.UserRole)
+            event = self.event_manager.get_event(event_id)
+        
+        # Create and show the node flow editor dialog
+        dialog = NodeFlowEditorDialog(self.event_manager, self)
+        
+        # If we have a current event, load it
+        if event:
+            dialog.editor.current_event = event
+            dialog.editor.event_name_edit.setText(event.name)
+            dialog.editor.event_description_edit.setText(event.description)
+            dialog.editor.event_enabled_checkbox.setChecked(event.enabled)
+        
+        # Show the dialog
+        if dialog.exec_():
+            # Reload events after dialog is closed
+            self._load_events()

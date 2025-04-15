@@ -1,0 +1,24 @@
+{
+    "id": "events",
+    "name": "Events",
+    "version": "1.0.0",
+    "description": "Event system with visual node flow editor for creating automated workflows",
+    "author": "Codegen",
+    "plugin_type": "automation",
+    "main_class": "EventsPlugin",
+    "dependencies": [],
+    "min_toolbar_version": "1.0.0",
+    "max_toolbar_version": "*",
+    "settings_schema": {
+        "type": "object",
+        "properties": {
+            "events": {
+                "type": "array",
+                "items": {
+                    "type": "object"
+                },
+                "default": []
+            }
+        }
+    }
+}
