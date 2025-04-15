@@ -1,21 +1,21 @@
 """
 GitHub integration plugin for the Toolbar application.
-This is an adapter that uses the toolkit implementation.
+This plugin provides integration with GitHub repositories, allowing users to monitor repositories,
+receive notifications for pull requests and branches, and manage GitHub projects.
 """
 
 import logging
 from PyQt5.QtCore import QObject, pyqtSignal
 
-# Import from toolkit
-from toolkit.plugins.github.github.monitor import GitHubMonitor
-from toolkit.plugins.github.github_manager import GitHubManager
-from toolkit.plugins.github.github.models import GitHubProject, GitHubNotification
+# Import from core modules
+from Toolbar.core.github import GitHubMonitor, GitHubProject, GitHubNotification
+from Toolbar.core.github_manager import GitHubManager
 from Toolbar.core.plugin_system import Plugin
 
 logger = logging.getLogger(__name__)
 
 class GitHubPlugin(Plugin):
-    """GitHub integration plugin adapter that uses the toolkit implementation."""
+    """GitHub integration plugin for the Toolbar application."""
     
     def __init__(self):
         """Initialize the GitHub plugin."""
@@ -34,7 +34,7 @@ class GitHubPlugin(Plugin):
             config: Configuration object
             toolbar: Toolbar instance
         """
-        logger.info("Initializing GitHub plugin (adapter to toolkit)")
+        logger.info("Initializing GitHub plugin")
         
         # Create GitHub monitor
         github_monitor = GitHubMonitor(config)
@@ -45,7 +45,7 @@ class GitHubPlugin(Plugin):
         # Create GitHub UI if toolbar is provided
         if toolbar:
             try:
-                from toolkit.plugins.github.ui.github_ui import GitHubUI
+                from Toolbar.plugins.github.ui.github_ui import GitHubUI
                 self.github_ui = GitHubUI(self.github_manager, toolbar)
             except Exception as e:
                 logger.error(f"Error creating GitHub UI: {e}")
