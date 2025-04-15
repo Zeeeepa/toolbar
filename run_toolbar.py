@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """
-Run script for the Toolbar application.
-This script provides a simple way to run the toolbar from the root directory.
+Entry point script for running the Toolbar application.
 """
 
 import sys
+import os
+
+# Add the parent directory to the Python path
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+
 from Toolbar.main import main
 
 if __name__ == "__main__":

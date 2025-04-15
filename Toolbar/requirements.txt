@@ -4,4 +4,5 @@ pynput==1.7.6
 pyautogui==0.9.54
 keyboard==0.13.5
 pyperclip==1.8.2
-python-dotenv==1.0.0
+python-dotenv==0.21.1
+PyGithub==1.59.1
