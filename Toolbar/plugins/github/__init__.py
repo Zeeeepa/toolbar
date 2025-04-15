@@ -1,50 +1,60 @@
 """
 GitHub integration plugin for the Toolbar application.
+This is an adapter that uses the toolkit implementation.
 """
 
+import logging
+from PyQt5.QtCore import QObject, pyqtSignal
+
+# Import from toolkit
+from toolkit.plugins.github.github.monitor import GitHubMonitor
+from toolkit.plugins.github.github_manager import GitHubManager
+from toolkit.plugins.github.github.models import GitHubProject, GitHubNotification
 from Toolbar.core.plugin_system import Plugin
-from Toolbar.core.github import GitHubMonitor
-from Toolbar.core.github_manager import GitHubManager
+
+logger = logging.getLogger(__name__)
 
 class GitHubPlugin(Plugin):
-    """GitHub integration plugin."""
+    """GitHub integration plugin adapter that uses the toolkit implementation."""
     
     def __init__(self):
-        self.monitor = None
-        self.manager = None
-    
-    def initialize(self, config):
         """Initialize the GitHub plugin."""
-        try:
-            # Initialize GitHub monitor
-            self.monitor = GitHubMonitor(config)
-            
-            # Initialize GitHub manager
-            self.manager = GitHubManager(self.monitor)
-            
-            # Start monitoring if enabled
-            if config.get('github', 'token'):
-                self.monitor.start_monitoring()
-                
-                # Set up webhooks if enabled
-                if config.get('github', 'webhook_enabled', False):
-                    self.monitor.setup_webhooks()
-        except Exception as e:
-            print(f"Failed to initialize GitHub plugin: {e}")
+        super().__init__()
+        self.name = "GitHub Integration"
+        self.description = "Integrates with GitHub to monitor repositories and provide notifications."
+        self.version = "1.0.0"
+        self.github_manager = None
+        self.github_ui = None
+        
+    def initialize(self, config, toolbar=None):
+        """
+        Initialize the GitHub plugin.
+        
+        Args:
+            config: Configuration object
+            toolbar: Toolbar instance
+        """
+        logger.info("Initializing GitHub plugin (adapter to toolkit)")
+        
+        # Create GitHub monitor
+        github_monitor = GitHubMonitor(config)
+        
+        # Create GitHub manager
+        self.github_manager = GitHubManager(github_monitor)
+        
+        # Create GitHub UI if toolbar is provided
+        if toolbar:
+            try:
+                from toolkit.plugins.github.ui.github_ui import GitHubUI
+                self.github_ui = GitHubUI(self.github_manager, toolbar)
+            except Exception as e:
+                logger.error(f"Error creating GitHub UI: {e}")
+        
+        return True
     
     def cleanup(self):
-        """Clean up GitHub plugin resources."""
-        if self.monitor:
-            self.monitor.stop_monitoring()
-    
-    @property
-    def name(self) -> str:
-        return "GitHub Integration"
-    
-    @property
-    def version(self) -> str:
-        return "1.0.0"
-    
-    @property
-    def description(self) -> str:
-        return "Provides GitHub repository monitoring and webhook functionality."
+        """Clean up resources used by the plugin."""
+        logger.info("Cleaning up GitHub plugin")
+        if self.github_manager:
+            self.github_manager.cleanup()
+        return True
