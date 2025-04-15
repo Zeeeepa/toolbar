@@ -3,7 +3,7 @@ Linear integration plugin for the Toolbar application.
 """
 
 from Toolbar.core.plugin_system import Plugin
-from Toolbar.core.linear_integration import LinearIntegration
+from .linear_integration import LinearIntegration
 
 class LinearPlugin(Plugin):
     """Linear integration plugin."""
@@ -34,4 +34,4 @@ class LinearPlugin(Plugin):
     
     @property
     def description(self) -> str:
-        return "Provides Linear issue tracking and project management integration." 
+        return "Provides Linear issue tracking and project management integration."

@@ -21,11 +21,47 @@ dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 if os.path.exists(dotenv_path):
     dotenv.load_dotenv(dotenv_path)
 
-from PyQt5.QtWidgets import QApplication, QMessageBox, QSplashScreen
+from PyQt5.QtWidgets import QApplication, QMessageBox, QSplashScreen, QVBoxLayout, QLabel, QPushButton, QDialog
 
 # Import custom modules
-from Toolbar.core.config import Config, get_config_instance
-from Toolbar.core.plugin_system import PluginManager
+# Use try-except for core imports to make the application more robust
+try:
+    from Toolbar.core.config import Config, get_config_instance
+    from Toolbar.core.plugin_system import PluginManager
+except ImportError as e:
+    # Log the error
+    print(f"Critical import error: {e}")
+    
+    # Define fallback classes if imports fail
+    class Config:
+        def __init__(self):
+            self.settings = {}
+        
+        def get_setting(self, key, default=None):
+            return self.settings.get(key, default)
+        
+        def set_setting(self, key, value):
+            self.settings[key] = value
+    
+    def get_config_instance():
+        return Config()
+    
+    class PluginManager:
+        def __init__(self, config):
+            self.config = config
+            self.plugins = {}
+            self.plugin_dirs = []
+            self.failed_plugins = {}
+        
+        def add_plugin_directory(self, directory):
+            if os.path.isdir(directory) and directory not in self.plugin_dirs:
+                self.plugin_dirs.append(directory)
+        
+        def load_plugins(self):
+            pass
+        
+        def cleanup(self):
+            pass
 
 # Set up logging
 logging.basicConfig(
@@ -44,6 +80,35 @@ warnings.filterwarnings("ignore", message=".*sipPyTypeDict.*")
 # Global variables
 toolbar_instance = None
 plugin_manager = None
+
+class PluginErrorDialog(QDialog):
+    """Dialog to display plugin loading errors."""
+    
+    def __init__(self, failed_plugins, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Plugin Loading Errors")
+        self.setMinimumWidth(500)
+        self.setMinimumHeight(300)
+        
+        layout = QVBoxLayout()
+        
+        # Add error message
+        error_label = QLabel("Some plugins failed to load. The application will continue with limited functionality.")
+        error_label.setWordWrap(True)
+        layout.addWidget(error_label)
+        
+        # Add failed plugins list
+        for plugin_name, error_msg in failed_plugins.items():
+            plugin_label = QLabel(f"<b>{plugin_name}</b>: {error_msg}")
+            plugin_label.setWordWrap(True)
+            layout.addWidget(plugin_label)
+        
+        # Add continue button
+        continue_button = QPushButton("Continue Anyway")
+        continue_button.clicked.connect(self.accept)
+        layout.addWidget(continue_button)
+        
+        self.setLayout(layout)
 
 def exception_hook(exc_type, exc_value, exc_traceback):
     """Handle uncaught exceptions by logging them and showing a message box."""
@@ -82,10 +147,24 @@ def main():
         try:
             plugin_manager.load_plugins()
             logger.info("Plugins loaded")
+            
+            # Check for failed plugins
+            failed_plugins = plugin_manager.get_failed_plugins()
+            if failed_plugins:
+                logger.warning(f"Some plugins failed to load: {failed_plugins}")
+                
+                # Show error dialog
+                error_dialog = PluginErrorDialog(failed_plugins)
+                error_dialog.exec_()
         except Exception as e:
             logger.error(f"Error loading plugins: {e}", exc_info=True)
             # Continue execution even if plugins fail to load
-            
+            QMessageBox.warning(
+                None,
+                "Plugin Loading Error",
+                f"Error loading plugins: {str(e)}\n\nThe application will continue with limited functionality."
+            )
+        
         # Import ScriptToolbar here to avoid circular imports
         try:
             from Toolbar.plugins.automationmanager.ui.script_toolbar_ui import ScriptToolbar
