@@ -51,4 +51,4 @@ class GitHubProject:
     
     def add_notification(self, notification):
         """Add a notification to this project."""
-        self.notifications.append(notification) 
+        self.notifications.append(notification)

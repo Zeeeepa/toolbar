@@ -1,279 +1,284 @@
+#!/usr/bin/env python3
 import os
-import warnings
-from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-                           QComboBox, QSlider, QPushButton, QFormLayout,
-                           QGroupBox, QRadioButton, QButtonGroup, QCheckBox)
+import sys
+import logging
+from typing import Dict, List, Optional, Any
+
+from PyQt5.QtWidgets import (
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, 
+    QComboBox, QCheckBox, QPushButton, QTabWidget, QWidget,
+    QGroupBox, QFormLayout, QSpinBox, QMessageBox, QFileDialog
+)
+from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import Qt
 
-# Suppress PyQt5 deprecation warnings
-warnings.filterwarnings("ignore", message=".*sipPyTypeDict.*")
+logger = logging.getLogger(__name__)
 
 class ToolbarSettingsDialog(QDialog):
-    """Dialog for configuring toolbar settings."""
+    """Settings dialog for the Toolbar application."""
     
     def __init__(self, config, parent=None):
         """
-        Initialize the toolbar settings dialog.
+        Initialize the settings dialog.
         
         Args:
-            config (Config): Application configuration
-            parent (QWidget, optional): Parent widget
+            config: Configuration object
+            parent: Parent widget
         """
         super().__init__(parent)
-        self.setWindowTitle("Toolbar Settings")
-        self.setMinimumSize(450, 350)
-        
         self.config = config
         
-        # Set up the UI
-        self.init_ui()
+        # Set dialog properties
+        self.setWindowTitle("Toolbar Settings")
+        self.setMinimumSize(500, 400)
         
-        # Apply dark theme
-        self.apply_dark_theme()
+        # Create layout
+        self.layout = QVBoxLayout(self)
         
-        # Load current settings
-        self.load_settings()
+        # Create tab widget
+        self.tab_widget = QTabWidget()
+        self.layout.addWidget(self.tab_widget)
+        
+        # Create tabs
+        self._create_general_tab()
+        self._create_github_tab()
+        self._create_linear_tab()
+        self._create_plugins_tab()
+        self._create_appearance_tab()
+        
+        # Create buttons
+        self._create_buttons()
+        
+        logger.info("Settings dialog initialized")
     
-    def init_ui(self):
-        """Initialize the user interface."""
-        main_layout = QVBoxLayout(self)
+    def _create_general_tab(self):
+        """Create general settings tab."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
         
-        # Create form layout for settings
-        form_layout = QFormLayout()
-        main_layout.addLayout(form_layout)
+        # Create general settings group
+        group = QGroupBox("General Settings")
+        group_layout = QFormLayout(group)
         
-        # Position setting
-        position_group = QGroupBox("Toolbar Position")
-        position_layout = QVBoxLayout(position_group)
+        # Create auto-start checkbox
+        self.auto_start_checkbox = QCheckBox("Start on system boot")
+        self.auto_start_checkbox.setChecked(self.config.get_setting("auto_start", False))
+        group_layout.addRow("", self.auto_start_checkbox)
         
-        self.position_top = QRadioButton("Top")
-        self.position_bottom = QRadioButton("Bottom")
-        self.position_left = QRadioButton("Left")
-        self.position_right = QRadioButton("Right")
+        # Create minimize to tray checkbox
+        self.minimize_to_tray_checkbox = QCheckBox("Minimize to system tray")
+        self.minimize_to_tray_checkbox.setChecked(self.config.get_setting("minimize_to_tray", True))
+        group_layout.addRow("", self.minimize_to_tray_checkbox)
         
-        self.position_group = QButtonGroup(self)
-        self.position_group.addButton(self.position_top, 1)
-        self.position_group.addButton(self.position_bottom, 2)
-        self.position_group.addButton(self.position_left, 3)
-        self.position_group.addButton(self.position_right, 4)
+        layout.addWidget(group)
         
-        position_layout.addWidget(self.position_top)
-        position_layout.addWidget(self.position_bottom)
-        position_layout.addWidget(self.position_left)
-        position_layout.addWidget(self.position_right)
+        # Add tab
+        self.tab_widget.addTab(tab, "General")
+    
+    def _create_github_tab(self):
+        """Create GitHub settings tab."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
         
-        form_layout.addRow(position_group)
+        # Create GitHub settings group
+        group = QGroupBox("GitHub Settings")
+        group_layout = QFormLayout(group)
         
-        # Opacity setting
-        opacity_group = QGroupBox("Transparency")
-        opacity_layout = QVBoxLayout(opacity_group)
+        # Create token field
+        self.github_token_field = QLineEdit()
+        self.github_token_field.setText(self.config.get_setting("github.token", ""))
+        self.github_token_field.setEchoMode(QLineEdit.Password)
+        group_layout.addRow("API Token:", self.github_token_field)
         
-        opacity_slider_layout = QHBoxLayout()
-        self.opacity_slider = QSlider(Qt.Horizontal)
-        self.opacity_slider.setMinimum(10)
-        self.opacity_slider.setMaximum(100)
-        self.opacity_slider.setTickInterval(10)
-        self.opacity_slider.setTickPosition(QSlider.TicksBelow)
-        self.opacity_label = QLabel("90%")
-        self.opacity_slider.valueChanged.connect(self.update_opacity_label)
-        opacity_slider_layout.addWidget(self.opacity_slider)
-        opacity_slider_layout.addWidget(self.opacity_label)
+        # Create username field
+        self.github_username_field = QLineEdit()
+        self.github_username_field.setText(self.config.get_setting("github.username", ""))
+        group_layout.addRow("Username:", self.github_username_field)
         
-        opacity_layout.addLayout(opacity_slider_layout)
-        opacity_layout.addWidget(QLabel("Move slider left for more transparency, right for more opacity"))
+        layout.addWidget(group)
         
-        form_layout.addRow(opacity_group)
+        # Add tab
+        self.tab_widget.addTab(tab, "GitHub")
+    
+    def _create_linear_tab(self):
+        """Create Linear settings tab."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
         
-        # Behavior settings
-        behavior_group = QGroupBox("Behavior")
-        behavior_layout = QVBoxLayout(behavior_group)
+        # Create Linear settings group
+        group = QGroupBox("Linear Settings")
+        group_layout = QFormLayout(group)
         
-        # Stay on top setting
-        self.stay_on_top_checkbox = QCheckBox("Stay on top of other windows")
-        behavior_layout.addWidget(self.stay_on_top_checkbox)
+        # Create API key field
+        self.linear_api_key_field = QLineEdit()
+        self.linear_api_key_field.setText(self.config.get_setting("linear.api_key", ""))
+        self.linear_api_key_field.setEchoMode(QLineEdit.Password)
+        group_layout.addRow("API Key:", self.linear_api_key_field)
         
-        # Center images setting
-        self.center_images_checkbox = QCheckBox("Center images in toolbar")
-        behavior_layout.addWidget(self.center_images_checkbox)
+        # Create team ID field
+        self.linear_team_id_field = QLineEdit()
+        self.linear_team_id_field.setText(self.config.get_setting("linear.team_id", ""))
+        group_layout.addRow("Team ID:", self.linear_team_id_field)
         
-        form_layout.addRow(behavior_group)
+        layout.addWidget(group)
         
-        # Buttons
-        buttons_layout = QHBoxLayout()
-        main_layout.addLayout(buttons_layout)
+        # Add tab
+        self.tab_widget.addTab(tab, "Linear")
+    
+    def _create_plugins_tab(self):
+        """Create plugins settings tab."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
         
+        # Create plugins settings group
+        group = QGroupBox("Plugin Settings")
+        group_layout = QVBoxLayout(group)
+        
+        # Create plugin checkboxes
+        self.plugin_checkboxes = {}
+        
+        # Get enabled and disabled plugins
+        enabled_plugins = self.config.get_setting("plugins.enabled", [])
+        disabled_plugins = self.config.get_setting("plugins.disabled", [])
+        
+        # Get all plugins
+        plugins = {}
+        for plugin_dir in self.config.get_setting("plugins.directories", []):
+            if os.path.isdir(plugin_dir):
+                for item in os.listdir(plugin_dir):
+                    item_path = os.path.join(plugin_dir, item)
+                    if os.path.isdir(item_path) and not item.startswith("."):
+                        plugins[item] = item_path
+        
+        # Add checkboxes for each plugin
+        for name, path in plugins.items():
+            checkbox = QCheckBox(name)
+            checkbox.setChecked(name not in disabled_plugins)
+            self.plugin_checkboxes[name] = checkbox
+            group_layout.addWidget(checkbox)
+        
+        group_layout.addStretch()
+        layout.addWidget(group)
+        
+        # Add tab
+        self.tab_widget.addTab(tab, "Plugins")
+    
+    def _create_appearance_tab(self):
+        """Create appearance settings tab."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        
+        # Create appearance settings group
+        group = QGroupBox("Appearance Settings")
+        group_layout = QFormLayout(group)
+        
+        # Create theme combo box
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(["System", "Light", "Dark"])
+        theme = self.config.get_setting("ui.theme", "system")
+        if theme.lower() == "light":
+            self.theme_combo.setCurrentIndex(1)
+        elif theme.lower() == "dark":
+            self.theme_combo.setCurrentIndex(2)
+        else:
+            self.theme_combo.setCurrentIndex(0)
+        group_layout.addRow("Theme:", self.theme_combo)
+        
+        # Create font size spin box
+        self.font_size_spin = QSpinBox()
+        self.font_size_spin.setRange(8, 24)
+        self.font_size_spin.setValue(self.config.get_setting("ui.font_size", 12))
+        group_layout.addRow("Font Size:", self.font_size_spin)
+        
+        # Create toolbar position combo box
+        self.position_combo = QComboBox()
+        self.position_combo.addItems(["Top", "Bottom", "Left", "Right", "Center"])
+        position = self.config.get_setting("ui.toolbar_position", "top")
+        if position.lower() == "bottom":
+            self.position_combo.setCurrentIndex(1)
+        elif position.lower() == "left":
+            self.position_combo.setCurrentIndex(2)
+        elif position.lower() == "right":
+            self.position_combo.setCurrentIndex(3)
+        elif position.lower() == "center":
+            self.position_combo.setCurrentIndex(4)
+        else:
+            self.position_combo.setCurrentIndex(0)
+        group_layout.addRow("Toolbar Position:", self.position_combo)
+        
+        layout.addWidget(group)
+        
+        # Add tab
+        self.tab_widget.addTab(tab, "Appearance")
+    
+    def _create_buttons(self):
+        """Create dialog buttons."""
+        button_layout = QHBoxLayout()
+        
+        # Create save button
         save_button = QPushButton("Save")
-        save_button.clicked.connect(self.save_settings)
-        buttons_layout.addWidget(save_button)
+        save_button.clicked.connect(self._save_settings)
+        button_layout.addWidget(save_button)
         
+        # Create cancel button
         cancel_button = QPushButton("Cancel")
         cancel_button.clicked.connect(self.reject)
-        buttons_layout.addWidget(cancel_button)
+        button_layout.addWidget(cancel_button)
+        
+        self.layout.addLayout(button_layout)
     
-    def load_settings(self):
-        """Load current settings from configuration."""
-        # Position
-        position = self.config.get('ui', 'position', 'top')
-        if position == 'top':
-            self.position_top.setChecked(True)
-        elif position == 'bottom':
-            self.position_bottom.setChecked(True)
-        elif position == 'left':
-            self.position_left.setChecked(True)
-        elif position == 'right':
-            self.position_right.setChecked(True)
-        
-        # Opacity
-        opacity = float(self.config.get('ui', 'opacity', 0.9))
-        self.opacity_slider.setValue(int(opacity * 100))
-        
-        # Center images
-        center_images = self.config.get('ui', 'center_images', True)
-        self.center_images_checkbox.setChecked(center_images)
-        
-        # Stay on top
-        stay_on_top = self.config.get('ui', 'stay_on_top', True)
-        self.stay_on_top_checkbox.setChecked(stay_on_top)
-    
-    def update_opacity_label(self, value):
-        """Update the opacity label when the slider changes."""
-        self.opacity_label.setText(f"{value}%")
-    
-    def save_settings(self):
-        """Save settings to configuration."""
-        # Position
-        if self.position_top.isChecked():
-            position = 'top'
-        elif self.position_bottom.isChecked():
-            position = 'bottom'
-        elif self.position_left.isChecked():
-            position = 'left'
-        elif self.position_right.isChecked():
-            position = 'right'
-        else:
-            position = 'top'  # Default
-        
-        self.config.set('ui', 'position', position)
-        
-        # Opacity
-        opacity = self.opacity_slider.value() / 100.0
-        self.config.set('ui', 'opacity', opacity)
-        
-        # Center images
-        center_images = self.center_images_checkbox.isChecked()
-        self.config.set('ui', 'center_images', center_images)
-        
-        # Stay on top
-        stay_on_top = self.stay_on_top_checkbox.isChecked()
-        self.config.set('ui', 'stay_on_top', stay_on_top)
-        
-        # Accept the dialog
-        self.accept()
-
-    def apply_dark_theme(self):
-        """Apply a dark theme to the dialog elements."""
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #2d2d2d;
-                color: #e1e1e1;
-            }
-            QLabel {
-                color: #e1e1e1;
-                font-weight: bold;
-            }
-            QGroupBox {
-                color: #e1e1e1;
-                font-weight: bold;
-                border: 1px solid #555555;
-                border-radius: 4px;
-                margin-top: 1ex;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top center;
-                padding: 0 3px;
-            }
-            QComboBox {
-                background-color: #383838;
-                color: #e1e1e1;
-                border: 1px solid #555555;
-                border-radius: 4px;
-                padding: 4px;
-            }
-            QComboBox::drop-down {
-                border-left: 1px solid #555555;
-            }
-            QComboBox QAbstractItemView {
-                background-color: #383838;
-                color: #e1e1e1;
-                selection-background-color: #0078d4;
-            }
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                padding: 6px 12px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #0086e8;
-            }
-            QPushButton:pressed {
-                background-color: #005fa3;
-            }
-            QSlider::groove:horizontal {
-                border: 1px solid #999999;
-                height: 8px;
-                background: #383838;
-                margin: 2px 0;
-                border-radius: 4px;
-            }
-            QSlider::handle:horizontal {
-                background: #0078d4;
-                border: 1px solid #5c5c5c;
-                width: 18px;
-                height: 18px;
-                margin: -6px 0;
-                border-radius: 9px;
-            }
-            QSlider::handle:horizontal:hover {
-                background: #0086e8;
-            }
-            QRadioButton {
-                color: #e1e1e1;
-                spacing: 5px;
-            }
-            QRadioButton::indicator {
-                width: 13px;
-                height: 13px;
-            }
-            QRadioButton::indicator:checked {
-                background-color: #0078d4;
-                border: 2px solid #e1e1e1;
-                border-radius: 7px;
-            }
-            QRadioButton::indicator:unchecked {
-                background-color: #383838;
-                border: 2px solid #e1e1e1;
-                border-radius: 7px;
-            }
-            QCheckBox {
-                color: #e1e1e1;
-                spacing: 5px;
-            }
-            QCheckBox::indicator {
-                width: 13px;
-                height: 13px;
-            }
-            QCheckBox::indicator:checked {
-                background-color: #0078d4;
-                border: 2px solid #e1e1e1;
-                border-radius: 3px;
-            }
-            QCheckBox::indicator:unchecked {
-                background-color: #383838;
-                border: 2px solid #e1e1e1;
-                border-radius: 3px;
-            }
-        """)
+    def _save_settings(self):
+        """Save settings."""
+        try:
+            # Save general settings
+            self.config.set_setting("auto_start", self.auto_start_checkbox.isChecked())
+            self.config.set_setting("minimize_to_tray", self.minimize_to_tray_checkbox.isChecked())
+            
+            # Save GitHub settings
+            self.config.set_setting("github.token", self.github_token_field.text())
+            self.config.set_setting("github.username", self.github_username_field.text())
+            
+            # Save Linear settings
+            self.config.set_setting("linear.api_key", self.linear_api_key_field.text())
+            self.config.set_setting("linear.team_id", self.linear_team_id_field.text())
+            
+            # Save plugin settings
+            for name, checkbox in self.plugin_checkboxes.items():
+                if checkbox.isChecked():
+                    self.config.enable_plugin(name)
+                else:
+                    self.config.disable_plugin(name)
+            
+            # Save appearance settings
+            theme_index = self.theme_combo.currentIndex()
+            if theme_index == 1:
+                self.config.set_setting("ui.theme", "light")
+            elif theme_index == 2:
+                self.config.set_setting("ui.theme", "dark")
+            else:
+                self.config.set_setting("ui.theme", "system")
+            
+            self.config.set_setting("ui.font_size", self.font_size_spin.value())
+            
+            position_index = self.position_combo.currentIndex()
+            if position_index == 1:
+                self.config.set_setting("ui.toolbar_position", "bottom")
+            elif position_index == 2:
+                self.config.set_setting("ui.toolbar_position", "left")
+            elif position_index == 3:
+                self.config.set_setting("ui.toolbar_position", "right")
+            elif position_index == 4:
+                self.config.set_setting("ui.toolbar_position", "center")
+            else:
+                self.config.set_setting("ui.toolbar_position", "top")
+            
+            # Save configuration
+            self.config.save()
+            
+            logger.info("Settings saved")
+            
+            # Close dialog
+            self.accept()
+        except Exception as e:
+            logger.error(f"Error saving settings: {e}", exc_info=True)
+            QMessageBox.critical(self, "Save Error", f"Error saving settings: {str(e)}")

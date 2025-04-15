@@ -14,10 +14,10 @@ import signal
 from pathlib import Path
 
 # Add the parent directory to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # Load environment variables from .env file if it exists
-dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
+dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), '.env')
 if os.path.exists(dotenv_path):
     dotenv.load_dotenv(dotenv_path)
 
@@ -32,9 +32,9 @@ from PyQt5.QtCore import Qt
 # Import custom modules
 # Use try-except for core imports to make the application more robust
 try:
-    from Toolbar.core.config import Config, get_config_instance
-    from Toolbar.core.plugin_system import PluginManager, Plugin
-    from Toolbar.ui.toolbar_ui import Toolbar  # Import the Toolbar class from ui module
+    from toolkit.toolbar.core.config import Config, get_config_instance
+    from toolkit.toolbar.core.plugin_system import PluginManager, Plugin
+    from toolkit.toolbar.ui.toolbar_ui import Toolbar  # Import the Toolbar class from ui module
 except ImportError as e:
     # Log the error
     print(f"Critical import error: {e}")
@@ -49,6 +49,9 @@ except ImportError as e:
         
         def set_setting(self, key, value):
             self.settings[key] = value
+        
+        def save(self):
+            pass
     
     def get_config_instance():
         return Config()
@@ -86,10 +89,10 @@ except ImportError as e:
         def load_plugins(self):
             pass
         
-        def get_failed_plugins(self):
+        def get_all_plugins(self):
             return {}
         
-        def get_all_plugins(self):
+        def get_failed_plugins(self):
             return {}
         
         def cleanup(self):
@@ -449,8 +452,7 @@ def main():
     """
     try:
         # Initialize global variable at the beginning of the function
-        global toolbar_instance
-        global plugin_manager
+        global toolbar_instance, plugin_manager
         toolbar_instance = None
         
         # Configure logging

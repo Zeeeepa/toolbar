@@ -1,241 +1,286 @@
+#!/usr/bin/env python3
 import os
 import json
-import warnings
-import dotenv
+import logging
+from typing import Dict, Any, Optional, List, Union
+import appdirs
 
-# Global configuration instance
+logger = logging.getLogger(__name__)
+
+# Singleton instance
 _config_instance = None
 
 def get_config_instance():
-    """
-    Get the global configuration instance.
-    Creates one if it doesn't exist yet.
-    
-    Returns:
-        Config: The global configuration instance
-    """
+    """Get the singleton Config instance."""
     global _config_instance
     if _config_instance is None:
         _config_instance = Config()
     return _config_instance
 
 class Config:
-    """
-    Centralized configuration management for the toolkit application.
-    Handles loading, saving, and accessing configuration settings.
-    """
-    def __init__(self, config_dir=None):
-        """
-        Initialize the configuration manager.
+    """Configuration manager for the Toolbar application."""
+    
+    def __init__(self, config_file=None):
+        """Initialize the configuration manager."""
+        self.settings = {}
         
-        Args:
-            config_dir (str, optional): Directory to store configuration files.
-                                       Defaults to the application directory.
-        """
-        # Load environment variables from .env file if it exists
-        dotenv.load_dotenv(override=True)
+        # Set default config file path if not provided
+        if config_file is None:
+            config_dir = appdirs.user_config_dir("toolkit", "zeeeepa")
+            os.makedirs(config_dir, exist_ok=True)
+            config_file = os.path.join(config_dir, "config.json")
         
-        if config_dir is None:
-            self.config_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        else:
-            self.config_dir = config_dir
-            
-        self.scripts_folder = os.path.join(self.config_dir, "scripts")
-        self.config_file = os.path.join(self.config_dir, "toolbar_config.json")
-        self.github_credentials_file = os.path.join(self.config_dir, "github_credentials.json")
+        self.config_file = config_file
         
-        # Ensure scripts folder exists
-        if not os.path.exists(self.scripts_folder):
-            os.makedirs(self.scripts_folder)
-            
-        # Initialize configuration with default values
-        self.config = {
-            'scripts': [],
-            'github': {
-                'username': os.getenv('GITHUB_USERNAME', ''),
-                'token': os.getenv('GITHUB_TOKEN', ''),
-                'pinned_projects': '[]',  # Add default empty list for pinned projects
-                'webhook_enabled': False,
-                'webhook_port': 8000,
-                'ngrok_auth_token': os.getenv('NGROK_AUTH_TOKEN', '')
-            },
-            'ui': {
-                'opacity': 1.0,
-                'stay_on_top': True,
-                'position': 'top',
-                'center_images': True
-            },
-            'settings': {}  # Add a settings section for general settings
+        # Load configuration
+        self.load()
+        
+        # Set default settings
+        self._set_defaults()
+    
+    def _set_defaults(self):
+        """Set default settings if they don't exist."""
+        defaults = {
+            "ui.theme": "dark",
+            "ui.position": "bottom",
+            "ui.always_on_top": True,
+            "ui.show_clock": True,
+            "ui.show_notifications": True,
+            "ui.taskbar_height": 48,
+            "ui.button_size": 32,
+            "ui.button_spacing": 4,
+            "ui.font_size": 10,
+            "ui.font_family": "Arial",
+            "ui.opacity": 1.0,
+            "ui.auto_hide": False,
+            "ui.auto_hide_delay": 3000,
+            "plugins.enabled": True,
+            "plugins.auto_update": True,
+            "plugins.user_dir": os.path.join(appdirs.user_data_dir("toolkit", "zeeeepa"), "plugins"),
+            "plugins.disabled": [],
+            "system.auto_start": False,
+            "system.check_updates": True,
+            "system.update_interval": 86400,  # 24 hours in seconds
+            "system.log_level": "INFO",
+            "system.log_file": os.path.join(appdirs.user_log_dir("toolkit", "zeeeepa"), "toolkit.log"),
+            "system.debug_mode": False,
+            "apps.favorites": [],
+            "apps.recent": [],
+            "apps.max_recent": 10,
         }
         
-        # Load configuration if it exists
-        self.load_config()
-        
-        # Override with environment variables if they exist
-        self._load_from_environment()
+        # Set defaults for any missing settings
+        for key, value in defaults.items():
+            if not self.has_setting(key):
+                self.set_setting(key, value)
     
-    def _load_from_environment(self):
-        """Load configuration values from environment variables."""
-        if os.getenv('GITHUB_USERNAME'):
-            self.config['github']['username'] = os.getenv('GITHUB_USERNAME')
-        if os.getenv('GITHUB_TOKEN'):
-            self.config['github']['token'] = os.getenv('GITHUB_TOKEN')
-        if os.getenv('NGROK_AUTH_TOKEN'):
-            self.config['github']['ngrok_auth_token'] = os.getenv('NGROK_AUTH_TOKEN')
-    
-    def load_config(self):
-        """Load configuration from the config file."""
-        if os.path.exists(self.config_file):
-            try:
-                with open(self.config_file, 'r') as f:
-                    loaded_config = json.load(f)
-                    # Update config with loaded values, preserving defaults for missing keys
-                    self._update_dict(self.config, loaded_config)
-            except Exception as e:
-                warnings.warn(f"Failed to load configuration: {str(e)}")
-    
-    def save_config(self):
-        """Save current configuration to the config file."""
+    def load(self):
+        """Load configuration from file."""
         try:
-            # Create a copy to avoid saving sensitive information
-            config_to_save = self._create_safe_config()
-            
-            with open(self.config_file, 'w') as f:
-                json.dump(config_to_save, f, indent=4)
+            if os.path.exists(self.config_file):
+                with open(self.config_file, "r") as f:
+                    self.settings = json.load(f)
+                logger.info(f"Configuration loaded from {self.config_file}")
+            else:
+                logger.info(f"Configuration file {self.config_file} not found, using defaults")
+                self.settings = {}
         except Exception as e:
-            warnings.warn(f"Failed to save configuration: {str(e)}")
+            logger.error(f"Error loading configuration: {e}", exc_info=True)
+            self.settings = {}
     
-    def _create_safe_config(self):
-        """Create a copy of the config without sensitive information."""
-        config_copy = json.loads(json.dumps(self.config))
-        
-        # Replace sensitive values with placeholders if they exist in environment variables
-        if os.getenv('GITHUB_TOKEN') and self.config['github']['token']:
-            config_copy['github']['token'] = "*** STORED IN ENVIRONMENT VARIABLE ***"
-        if os.getenv('NGROK_AUTH_TOKEN') and self.config['github']['ngrok_auth_token']:
-            config_copy['github']['ngrok_auth_token'] = "*** STORED IN ENVIRONMENT VARIABLE ***"
+    def save(self):
+        """Save configuration to file."""
+        try:
+            # Create directory if it doesn't exist
+            os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
             
-        return config_copy
-    
-    def get_github_credentials(self):
-        """Get GitHub credentials from config."""
-        return self.config.get('github', {}).get('username', ''), self.config.get('github', {}).get('token', '')
-    
-    def set_github_credentials(self, username, token):
-        """Set GitHub credentials in config."""
-        if 'github' not in self.config:
-            self.config['github'] = {}
-        self.config['github']['username'] = username
-        self.config['github']['token'] = token
-        self.save_config()
-        
-        # Also set environment variables if possible
-        if token:
-            os.environ['GITHUB_TOKEN'] = token
-        if username:
-            os.environ['GITHUB_USERNAME'] = username
-    
-    def set_ngrok_auth_token(self, token):
-        """Set the ngrok authentication token."""
-        if 'github' not in self.config:
-            self.config['github'] = {}
-        self.config['github']['ngrok_auth_token'] = token
-        self.save_config()
-        
-        # Also set environment variable if possible
-        if token:
-            os.environ['NGROK_AUTH_TOKEN'] = token
-    
-    def get_ngrok_auth_token(self):
-        """Get the ngrok authentication token."""
-        return self.config.get('github', {}).get('ngrok_auth_token', '')
-    
-    def get_scripts(self):
-        """Get configured scripts."""
-        return self.config.get('scripts', [])
-    
-    def add_script(self, script_data):
-        """Add a script to the configuration."""
-        self.config.get('scripts', []).append(script_data)
-        self.save_config()
-    
-    def remove_script(self, script_path):
-        """Remove a script from the configuration."""
-        self.config['scripts'] = [s for s in self.config.get('scripts', []) if s.get('path') != script_path]
-        self.save_config()
-    
-    def update_script(self, script_path, updated_data):
-        """Update a script's configuration."""
-        for script in self.config.get('scripts', []):
-            if script.get('path') == script_path:
-                script.update(updated_data)
-                break
-        self.save_config()
+            with open(self.config_file, "w") as f:
+                json.dump(self.settings, f, indent=4)
+            
+            logger.info(f"Configuration saved to {self.config_file}")
+            return True
+        except Exception as e:
+            logger.error(f"Error saving configuration: {e}", exc_info=True)
+            return False
     
     def get_setting(self, key, default=None):
         """
-        Get a setting value from the configuration.
+        Get a setting value.
         
         Args:
-            key (str): Setting key
+            key: Setting key (dot-separated path)
             default: Default value if setting doesn't exist
-            
+        
         Returns:
-            The setting value or default if not found
+            Setting value or default
         """
-        return self.config.get('settings', {}).get(key, default)
+        # Handle dot notation (e.g., "ui.theme")
+        if "." in key:
+            parts = key.split(".")
+            current = self.settings
+            
+            for part in parts[:-1]:
+                if part not in current or not isinstance(current[part], dict):
+                    return default
+                current = current[part]
+            
+            return current.get(parts[-1], default)
+        
+        return self.settings.get(key, default)
     
     def set_setting(self, key, value):
         """
-        Set a setting value in the configuration.
+        Set a setting value.
         
         Args:
-            key (str): Setting key
+            key: Setting key (dot-separated path)
             value: Setting value
         """
-        if 'settings' not in self.config:
-            self.config['settings'] = {}
-        self.config['settings'][key] = value
-        self.save_config()
-    
-    def get(self, section, key, default=None):
-        """
-        Get a value from a specific section in the configuration.
-        
-        Args:
-            section (str): Configuration section
-            key (str): Setting key
-            default: Default value if setting doesn't exist
+        # Handle dot notation (e.g., "ui.theme")
+        if "." in key:
+            parts = key.split(".")
+            current = self.settings
             
+            for part in parts[:-1]:
+                if part not in current:
+                    current[part] = {}
+                elif not isinstance(current[part], dict):
+                    current[part] = {}
+                
+                current = current[part]
+            
+            current[parts[-1]] = value
+        else:
+            self.settings[key] = value
+    
+    def has_setting(self, key):
+        """
+        Check if a setting exists.
+        
+        Args:
+            key: Setting key (dot-separated path)
+        
         Returns:
-            The value or default if not found
+            True if setting exists, False otherwise
         """
-        return self.config.get(section, {}).get(key, default)
+        # Handle dot notation (e.g., "ui.theme")
+        if "." in key:
+            parts = key.split(".")
+            current = self.settings
+            
+            for part in parts[:-1]:
+                if part not in current or not isinstance(current[part], dict):
+                    return False
+                current = current[part]
+            
+            return parts[-1] in current
+        
+        return key in self.settings
     
-    def set(self, section, key, value):
+    def delete_setting(self, key):
         """
-        Set a value in a specific section in the configuration.
+        Delete a setting.
         
         Args:
-            section (str): Configuration section
-            key (str): Setting key
-            value: Setting value
+            key: Setting key (dot-separated path)
+        
+        Returns:
+            True if setting was deleted, False otherwise
         """
-        if section not in self.config:
-            self.config[section] = {}
-        self.config[section][key] = value
-        self.save_config()
+        # Handle dot notation (e.g., "ui.theme")
+        if "." in key:
+            parts = key.split(".")
+            current = self.settings
+            
+            for part in parts[:-1]:
+                if part not in current or not isinstance(current[part], dict):
+                    return False
+                current = current[part]
+            
+            if parts[-1] in current:
+                del current[parts[-1]]
+                return True
+            
+            return False
+        
+        if key in self.settings:
+            del self.settings[key]
+            return True
+        
+        return False
     
-    def _update_dict(self, target, source):
+    def get_all_settings(self):
         """
-        Recursively update a dictionary with another dictionary's values.
+        Get all settings.
+        
+        Returns:
+            Dictionary of all settings
+        """
+        return self.settings.copy()
+    
+    def add_favorite_app(self, app_info):
+        """
+        Add an application to favorites.
         
         Args:
-            target (dict): The dictionary to update
-            source (dict): The dictionary with new values
+            app_info: Dictionary with app information (name, path, icon, args)
         """
-        for key, value in source.items():
-            if key in target and isinstance(target[key], dict) and isinstance(value, dict):
-                self._update_dict(target[key], value)
-            else:
-                target[key] = value
+        favorites = self.get_setting("apps.favorites", [])
+        
+        # Check if app is already in favorites
+        for i, app in enumerate(favorites):
+            if app.get("path") == app_info.get("path"):
+                # Update existing app
+                favorites[i] = app_info
+                self.set_setting("apps.favorites", favorites)
+                return
+        
+        # Add new app
+        favorites.append(app_info)
+        self.set_setting("apps.favorites", favorites)
+    
+    def remove_favorite_app(self, app_path):
+        """
+        Remove an application from favorites.
+        
+        Args:
+            app_path: Path of the application to remove
+        
+        Returns:
+            True if app was removed, False otherwise
+        """
+        favorites = self.get_setting("apps.favorites", [])
+        
+        for i, app in enumerate(favorites):
+            if app.get("path") == app_path:
+                favorites.pop(i)
+                self.set_setting("apps.favorites", favorites)
+                return True
+        
+        return False
+    
+    def add_recent_app(self, app_info):
+        """
+        Add an application to recent apps.
+        
+        Args:
+            app_info: Dictionary with app information (name, path, icon, args)
+        """
+        recent = self.get_setting("apps.recent", [])
+        max_recent = self.get_setting("apps.max_recent", 10)
+        
+        # Remove app if already in recent list
+        recent = [app for app in recent if app.get("path") != app_info.get("path")]
+        
+        # Add app to beginning of list
+        recent.insert(0, app_info)
+        
+        # Trim list if needed
+        if len(recent) > max_recent:
+            recent = recent[:max_recent]
+        
+        self.set_setting("apps.recent", recent)
+    
+    def clear_recent_apps(self):
+        """Clear the recent apps list."""
+        self.set_setting("apps.recent", [])
