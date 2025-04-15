@@ -2,7 +2,7 @@ import os
 import warnings
 import webbrowser
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-                            QPushButton, QToolButton, QMenu, QAction)
+                            QPushButton, QToolButton, QMenu, QAction, QTabWidget, QDialog, QMessageBox)
 from PyQt5.QtGui import QIcon, QCursor
 from PyQt5.QtCore import Qt, pyqtSignal
 
@@ -98,44 +98,20 @@ class GitHubUI(QWidget):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         
+        # Create a tabbed interface for the settings dialog
+        self.tabs = QTabWidget()
+        
+        # GitHub icon button (will be positioned on the left side of the toolbar)
+        self.github_button = QToolButton()
+        self.github_button.setIcon(QIcon(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                                                "icons", "github.svg")))
+        self.github_button.setToolTip("GitHub")
+        self.github_button.clicked.connect(self.show_github_dialog)
+        
         # Toolbar for GitHub actions
         toolbar_layout = QHBoxLayout()
         toolbar_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addLayout(toolbar_layout)
-        
-        # GitHub settings button
-        settings_button = QToolButton()
-        settings_button.setIcon(QIcon(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-                                                "icons", "settings.svg")))
-        settings_button.setToolTip("GitHub Settings")
-        settings_button.clicked.connect(self.show_github_settings)
-        toolbar_layout.addWidget(settings_button)
-        
-        # Projects button
-        projects_button = QToolButton()
-        projects_button.setIcon(QIcon(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-                                                "icons", "project.svg")))
-        projects_button.setToolTip("GitHub Projects")
-        projects_button.clicked.connect(self.show_projects_dialog)
-        toolbar_layout.addWidget(projects_button)
-        
-        # Notifications button
-        self.notifications_button = QToolButton()
-        self.notifications_button.setIcon(QIcon(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-                                                        "icons", "notification.svg")))
-        self.notifications_button.setToolTip("GitHub Notifications")
-        self.notifications_button.clicked.connect(self.toggle_notifications)
-        toolbar_layout.addWidget(self.notifications_button)
-        
-        # Notification badge
-        self.notification_badge = QLabel("0")
-        self.notification_badge.setStyleSheet("background-color: red; color: white; border-radius: 10px; padding: 2px;")
-        self.notification_badge.setAlignment(Qt.AlignCenter)
-        self.notification_badge.setVisible(False)
-        toolbar_layout.addWidget(self.notification_badge)
-        
-        # Spacer
-        toolbar_layout.addStretch(1)
         
         # Projects container
         projects_container = QWidget()
@@ -176,6 +152,132 @@ class GitHubUI(QWidget):
         # Initialize collections
         self.notification_widgets = []
         self.project_widgets = {}
+        
+        # Create notification badge for the toolbar
+        self.notification_badge = QLabel("0")
+        self.notification_badge.setStyleSheet("background-color: red; color: white; border-radius: 10px; padding: 2px;")
+        self.notification_badge.setAlignment(Qt.AlignCenter)
+        self.notification_badge.setVisible(False)
+    
+    def show_github_dialog(self):
+        """Show GitHub settings dialog with tabs."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("GitHub")
+        dialog.setMinimumSize(800, 600)
+        
+        # Create layout
+        layout = QVBoxLayout(dialog)
+        
+        # Create tabs
+        tabs = QTabWidget()
+        
+        # API tab
+        api_tab = QWidget()
+        api_layout = QVBoxLayout(api_tab)
+        api_settings = GitHubSettingsDialog(self.github_monitor, dialog)
+        api_layout.addWidget(api_settings)
+        tabs.addTab(api_tab, "API")
+        
+        # Projects tab
+        projects_tab = QWidget()
+        projects_layout = QVBoxLayout(projects_tab)
+        projects_dialog = GitHubProjectsDialog(self.github_monitor, dialog)
+        projects_layout.addWidget(projects_dialog)
+        tabs.addTab(projects_tab, "Projects")
+        
+        # Monitoring tab
+        monitoring_tab = QWidget()
+        monitoring_layout = QVBoxLayout(monitoring_tab)
+        
+        # Add monitoring options
+        monitoring_label = QLabel("Notification Settings")
+        monitoring_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        monitoring_layout.addWidget(monitoring_label)
+        
+        # PR notifications checkbox
+        self.pr_notifications_checkbox = QCheckBox("Notify on new Pull Requests")
+        self.pr_notifications_checkbox.setChecked(True)
+        monitoring_layout.addWidget(self.pr_notifications_checkbox)
+        
+        # Branch notifications checkbox
+        self.branch_notifications_checkbox = QCheckBox("Notify on new Branches")
+        self.branch_notifications_checkbox.setChecked(True)
+        monitoring_layout.addWidget(self.branch_notifications_checkbox)
+        
+        # Save monitoring settings button
+        save_monitoring_button = QPushButton("Save Notification Settings")
+        save_monitoring_button.clicked.connect(self.save_monitoring_settings)
+        monitoring_layout.addWidget(save_monitoring_button)
+        
+        monitoring_layout.addStretch()
+        tabs.addTab(monitoring_tab, "Monitoring")
+        
+        # PR & Branch Settings tab
+        pr_settings_tab = QWidget()
+        pr_settings_layout = QVBoxLayout(pr_settings_tab)
+        
+        # Add PR & Branch settings
+        pr_settings_label = QLabel("PR & Branch Settings")
+        pr_settings_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        pr_settings_layout.addWidget(pr_settings_label)
+        
+        # Auto-merge rules
+        auto_merge_label = QLabel("Auto-merge Rules")
+        auto_merge_label.setStyleSheet("font-weight: bold;")
+        pr_settings_layout.addWidget(auto_merge_label)
+        
+        # Auto-merge markdown and prompt files
+        self.auto_merge_md_prompt_checkbox = QCheckBox("Auto-merge when only .md and .prompt files are changed")
+        pr_settings_layout.addWidget(self.auto_merge_md_prompt_checkbox)
+        
+        # Save PR settings button
+        save_pr_settings_button = QPushButton("Save PR Settings")
+        save_pr_settings_button.clicked.connect(self.save_pr_settings)
+        pr_settings_layout.addWidget(save_pr_settings_button)
+        
+        pr_settings_layout.addStretch()
+        tabs.addTab(pr_settings_tab, "PR & Branch Settings")
+        
+        # Add tabs to layout
+        layout.addWidget(tabs)
+        
+        # Add close button
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        
+        # Show dialog
+        dialog.exec_()
+        
+        # Reload pinned projects after dialog is closed
+        self.load_pinned_projects()
+    
+    def save_monitoring_settings(self):
+        """Save monitoring settings."""
+        try:
+            # Save notification settings
+            self.github_monitor.config.set_setting("github.notify_pr", self.pr_notifications_checkbox.isChecked())
+            self.github_monitor.config.set_setting("github.notify_branch", self.branch_notifications_checkbox.isChecked())
+            self.github_monitor.config.save()
+            
+            # Show success message
+            QMessageBox.information(self, "Success", "Notification settings saved successfully.")
+        except Exception as e:
+            warnings.warn(f"Failed to save monitoring settings: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to save settings: {str(e)}")
+    
+    def save_pr_settings(self):
+        """Save PR settings."""
+        try:
+            # Save PR settings
+            self.github_monitor.config.set_setting("github.auto_merge_md_prompt", self.auto_merge_md_prompt_checkbox.isChecked())
+            self.github_monitor.config.save()
+            
+            # Show success message
+            QMessageBox.information(self, "Success", "PR settings saved successfully.")
+        except Exception as e:
+            warnings.warn(f"Failed to save PR settings: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to save settings: {str(e)}")
     
     def show_github_settings(self):
         """Show GitHub settings dialog."""
