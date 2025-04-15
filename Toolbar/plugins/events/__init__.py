@@ -79,6 +79,20 @@ class EventsPlugin(Plugin):
         except Exception as e:
             logger.warning(f"Could not connect to GitHub events: {e}")
         
+        # Register event handlers for Linear events
+        try:
+            from Toolbar.main import get_plugin_instance
+            
+            linear_plugin = get_plugin_instance("Linear Integration")
+            if linear_plugin and hasattr(linear_plugin, 'linear_manager') and linear_plugin.linear_manager:
+                linear_manager = linear_plugin.linear_manager
+                if hasattr(linear_manager, 'notification_received'):
+                    # Connect Linear events to event manager
+                    linear_manager.notification_received.connect(self._handle_linear_notification)
+                    logger.info("Connected to Linear events")
+        except Exception as e:
+            logger.warning(f"Could not connect to Linear events: {e}")
+        
         return True
     
     def _handle_github_notification(self, notification):
@@ -108,6 +122,38 @@ class EventsPlugin(Plugin):
             event_type = "github_branch_created"
         elif notification.type == "push":
             event_type = "github_repo_updated"
+            
+        # Trigger event if type is determined
+        if event_type:
+            from Toolbar.plugins.events.core.event_system import EventType
+            try:
+                event_type_enum = EventType(event_type)
+                self.event_manager.trigger_event(event_type_enum, event_data)
+                logger.info(f"Triggered event: {event_type}")
+            except ValueError:
+                logger.warning(f"Unknown event type: {event_type}")
+    
+    def _handle_linear_notification(self, notification):
+        """
+        Handle Linear notification and trigger appropriate events.
+        
+        Args:
+            notification: Linear notification object
+        """
+        if not self.event_manager:
+            return
+            
+        # Extract event data from notification
+        event_data = notification.data
+        event_type = None
+        
+        # Determine event type based on notification type
+        if notification.type == "issue_created":
+            event_type = "linear_issue_created"
+        elif notification.type == "issue_updated":
+            event_type = "linear_issue_updated"
+        elif notification.type == "issue_closed":
+            event_type = "linear_issue_closed"
             
         # Trigger event if type is determined
         if event_type:
