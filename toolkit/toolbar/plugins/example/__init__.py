@@ -1,153 +1,122 @@
 #!/usr/bin/env python3
 import os
-import sys
 import logging
-from typing import Dict, List, Optional, Any
-
-from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTextEdit, QLineEdit
-)
+from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QTextEdit, QHBoxLayout
 from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt
 
 from toolkit.toolbar.core.plugin_system import Plugin
 
 logger = logging.getLogger(__name__)
 
 class ExamplePlugin(Plugin):
-    """
-    Example plugin for the Toolkit application.
-    Demonstrates how to create a simple plugin with a UI.
-    """
+    """Example plugin to demonstrate the plugin system."""
     
     def __init__(self):
-        """Initialize the plugin."""
         super().__init__()
-        self.config = None
-        self.ui = None
+        self.dialog = None
     
     def initialize(self, config):
-        """
-        Initialize the plugin.
-        
-        Args:
-            config: Configuration object
-        """
+        """Initialize the plugin."""
         self.config = config
         logger.info("Example plugin initialized")
     
     def cleanup(self):
-        """Clean up resources used by the plugin."""
+        """Clean up resources."""
+        if self.dialog:
+            self.dialog.close()
+            self.dialog = None
         logger.info("Example plugin cleaned up")
     
-    def get_ui(self):
-        """
-        Get the plugin UI.
+    def get_icon(self):
+        """Get the icon for the plugin."""
+        return QIcon.fromTheme("help-about", QIcon())
+    
+    def get_title(self):
+        """Get the title for the plugin."""
+        return "Example"
+    
+    def activate(self):
+        """Activate the plugin."""
+        if not self.dialog:
+            self.dialog = ExampleDialog()
         
-        Returns:
-            Plugin UI object
-        """
-        if self.ui is None:
-            self.ui = ExamplePluginUI(self.config)
-        return self.ui
+        self.dialog.show()
+        self.dialog.raise_()
+        self.dialog.activateWindow()
+        
+        logger.info("Example plugin activated")
     
     @property
-    def name(self) -> str:
-        """Get the name of the plugin."""
+    def name(self):
         return "ExamplePlugin"
     
     @property
-    def version(self) -> str:
-        """Get the version of the plugin."""
+    def version(self):
         return "1.0.0"
     
     @property
-    def description(self) -> str:
-        """Get the description of the plugin."""
-        return "Example plugin for the Toolkit application"
+    def description(self):
+        return "An example plugin to demonstrate the plugin system."
 
-class ExamplePluginUI:
-    """UI for the example plugin."""
+class ExampleDialog(QDialog):
+    """Dialog for the example plugin."""
     
-    def __init__(self, config):
-        """
-        Initialize the plugin UI.
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Example Plugin")
+        self.setMinimumSize(400, 300)
         
-        Args:
-            config: Configuration object
-        """
-        self.config = config
-        self.widget = QWidget()
-        self._init_ui()
-    
-    def _init_ui(self):
-        """Initialize the UI components."""
         # Create layout
-        layout = QVBoxLayout(self.widget)
+        layout = QVBoxLayout(self)
         
-        # Create title label
+        # Add title
         title_label = QLabel("Example Plugin")
-        title_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        title_label.setStyleSheet("font-size: 18px; font-weight: bold;")
         layout.addWidget(title_label)
         
-        # Create description label
-        description_label = QLabel("This is an example plugin for the Toolkit application.")
-        description_label.setWordWrap(True)
-        layout.addWidget(description_label)
+        # Add description
+        desc_label = QLabel("This is an example plugin to demonstrate the plugin system.")
+        desc_label.setWordWrap(True)
+        layout.addWidget(desc_label)
         
-        # Create input field
-        input_layout = QHBoxLayout()
-        input_label = QLabel("Input:")
-        self.input_field = QLineEdit()
-        input_layout.addWidget(input_label)
-        input_layout.addWidget(self.input_field)
-        layout.addLayout(input_layout)
+        # Add text area
+        self.text_edit = QTextEdit()
+        self.text_edit.setPlaceholderText("Type something here...")
+        layout.addWidget(self.text_edit)
         
-        # Create button
-        self.process_button = QPushButton("Process")
-        self.process_button.clicked.connect(self._process_input)
-        layout.addWidget(self.process_button)
+        # Add buttons
+        buttons_layout = QHBoxLayout()
         
-        # Create output field
-        output_label = QLabel("Output:")
-        layout.addWidget(output_label)
+        self.clear_button = QPushButton("Clear")
+        self.clear_button.clicked.connect(self.clear_text)
+        buttons_layout.addWidget(self.clear_button)
         
-        self.output_field = QTextEdit()
-        self.output_field.setReadOnly(True)
-        layout.addWidget(self.output_field)
+        self.save_button = QPushButton("Save")
+        self.save_button.clicked.connect(self.save_text)
+        buttons_layout.addWidget(self.save_button)
         
-        # Add spacer
-        layout.addStretch()
+        layout.addLayout(buttons_layout)
     
-    def _process_input(self):
-        """Process the input and display the output."""
+    def clear_text(self):
+        """Clear the text area."""
+        self.text_edit.clear()
+    
+    def save_text(self):
+        """Save the text to a file."""
         try:
-            # Get input
-            input_text = self.input_field.text()
+            # Get text
+            text = self.text_edit.toPlainText()
             
-            # Process input
-            output_text = f"Processed: {input_text}\n"
-            output_text += f"Length: {len(input_text)} characters\n"
-            output_text += f"Uppercase: {input_text.upper()}\n"
-            output_text += f"Lowercase: {input_text.lower()}\n"
+            # Save to file
+            home_dir = os.path.expanduser("~")
+            file_path = os.path.join(home_dir, "example_plugin_text.txt")
             
-            # Display output
-            self.output_field.setText(output_text)
+            with open(file_path, "w") as f:
+                f.write(text)
             
-            # Save to configuration
-            self.config.set_plugin_setting("ExamplePlugin", "last_input", input_text)
-            
-            logger.info(f"Input processed: {input_text}")
+            # Show success message
+            self.text_edit.setPlainText(f"Text saved to {file_path}")
         except Exception as e:
-            logger.error(f"Error processing input: {e}", exc_info=True)
-            self.output_field.setText(f"Error: {str(e)}")
-    
-    def get_widget(self):
-        """
-        Get the plugin widget.
-        
-        Returns:
-            QWidget: Plugin widget
-        """
-        return self.widget
+            # Show error message
+            self.text_edit.setPlainText(f"Error saving text: {str(e)}")
