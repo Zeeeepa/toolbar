@@ -1,0 +1,159 @@
+Read STRUCTURE.md "REQUIREMENTS" Section:
+Add Generated contents to ""REQUIREMENTS""" (create one if it does not exist) section of STRUCTURE.md
+
+Parse the STRUCTURE.md file to extract all requirements listed under the "REQUIREMENTS" section.
+Ensure that each requirement is clearly understood in terms of functionality, user interaction, and visual representation.
+Ensure Accessibility:
+
+After analyzing the requirements section, when preparing to create UI mockups, please make sure that all the features are properly accessible via the proposed UI's accessibility routes in a logical and rational manner.
+Verify that the UI design supports keyboard navigation, screen reader compatibility, and other accessibility standards.
+Generate UI Mockups:
+
+For each requirement, create a corresponding UI mockup that visually represents the functionality or feature.
+Use the existing UI components and layouts as a foundation, adapting them to match the specific needs of each requirement.
+Main Application Layout:
+
+Ensure the main application layout includes all necessary components as per the requirements.
+Adjust the layout to accommodate new features or changes specified in the "REQUIREMENTS" section.
+Tree Structure View:
+
+Update the tree structure view to reflect any new project hierarchy or components introduced in the requirements.
+Ensure the tree is expandable/collapsible and accurately represents the project's structure.
+Diagram View with Tabs:
+
+Create or modify diagrams to include any new diagram types or content specified in the requirements.
+Ensure the tabbed interface supports all necessary diagram views (e.g., Architecture, Components, Sequence, Data Model).
+Chat Interface:
+
+Adapt the chat interface to support any new interactions or features required for user assistance or project management.
+Ensure the chat can handle queries related to the new requirements.
+Mobile View:
+
+Adjust the mobile view to ensure all new features and requirements are accessible and functional on mobile devices.
+Use a tabbed interface to optimize space and usability.
+Context Menus:
+
+Update context menus for tree nodes and diagram tabs to include any new actions or options specified in the requirements.
+Ensure context menus are intuitive and provide quick access to relevant functions.
+Save to SUGGESTED.md:
+
+Document each UI mockup in the SUGGESTED.md file, including visual representations and explanations of how they correspond to the requirements.
+Use clear headings and descriptions to organize the mockups and provide context for each design decision.
+
+ 
+  # UI Mockups EXAMPLES BELOW 
+
+## Main Application Layout *EXAMPLE
+
+```
++-------------------------------------------------------+
+|                       Header                          |
++---------------+---------------------------------------+
+|               |                                       |
+|               |                                       |
+|               |                                       |
+|  Tree         |  Diagram View (Tabbed Interface)     |
+|  Structure    |                                       |
+|  View         |                                       |
+|               |                                       |
+|               |                                       |
+|               |                                       |
++---------------+---------------------------------------+
+|                                                       |
+|                  Chat Interface                       |
+|                                                       |
++-------------------------------------------------------+
+```
+
+The diagram view will feature a tabbed interface for different diagram types *EXAMPLE
+
+```
++-------------------------------------------------------+
+| [Architecture] [Components] [Sequence] [Data Model] + |
++-------------------------------------------------------+
+|                                                       |
+|                                                       |
+|                                                       |
+|                                                       |
+|                 Diagram Content                       |
+|                                                       |
+|                                                       |
+|                                                       |
+|                                                       |
++-------------------------------------------------------+
+| Zoom: [--------O--------] | Export: [PNG] [SVG] [URL] |
++-------------------------------------------------------+
+```
+
+## Chat Interface *EXAMPLE
+
+The chat interface will be located at the bottom of the screen:
+
+```
++-------------------------------------------------------+
+| [AI] Hello! How can I help with your project today?   |
+|                                                       |
+| [User] I need to create a web application for         |
+| inventory management.                                 |
+|                                                       |
+| [AI] I'll help you plan that. Let me create a basic   |
+| project structure and some diagrams for you.          |
+|                                                       |
+| [System] Creating project structure...                |
+| [System] Generating architecture diagram...           |
++-------------------------------------------------------+
+| Type your message...                        [Send] [↑]|
++-------------------------------------------------------+
+```
+
+## Mobile View *EXAMPLE
+
+On mobile devices, the layout will adapt to a tabbed interface:
+
+```
++-------------------------------------------------------+
+|  Project Name                              [≡] [👤]  |
++-------------------------------------------------------+
+| [Tree] [Diagram] [Chat]                               |
++-------------------------------------------------------+
+|                                                       |
+|                                                       |
+|                                                       |
+|                                                       |
+|                 Current Tab Content                   |
+|                                                       |
+|                                                       |
+|                                                       |
+|                                                       |
++-------------------------------------------------------+
+```
+
+## Context Menu  *EXAMPLE
+
+Right-clicking on a tree node will display a context menu:
+
+```
++------------------------+
+| ✏️ Edit                |
+| 🔍 View Details        |
+| 📊 Create Diagram      |
+| 📋 Add Child Node      |
+| 🗑️ Delete              |
+| 📋 Copy                |
+| 📋 Paste               |
++------------------------+
+```
+
+## Diagram Tab Context Menu *EXAMPLE
+
+Right-clicking on a diagram tab will display a context menu:
+
+```
++------------------------+
+| 📋 Duplicate Tab       |
+| 🔄 Refresh Diagram     |
+| 💾 Export Diagram      |
+| 🔍 View Mermaid Code   |
+| 🗑️ Close Tab           |
++------------------------+
+```
