@@ -1,0 +1,8 @@
+{
+    "name": "Events",
+    "description": "Create event-driven automations with a visual node-based flow editor.",
+    "version": "1.0.0",
+    "author": "Codegen",
+    "icon": "events.svg",
+    "category": "Automation"
+}

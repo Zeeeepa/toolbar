@@ -1,0 +1,44 @@
+{
+    "id": "events",
+    "name": "Events",
+    "version": "1.0.0",
+    "description": "Create event-driven automations with a visual node-based flow editor.",
+    "author": "Codegen",
+    "plugin_type": "automation",
+    "main_class": "EventsPlugin",
+    "dependencies": [
+        {
+            "plugin_id": "github",
+            "version_requirement": "*",
+            "optional": true
+        },
+        {
+            "plugin_id": "linear",
+            "version_requirement": "*",
+            "optional": true
+        }
+    ],
+    "min_toolbar_version": "1.0.0",
+    "max_toolbar_version": "*",
+    "settings_schema": {
+        "github": {
+            "pr": {
+                "type": "boolean",
+                "default": true,
+                "description": "Trigger events on new Pull Requests"
+            },
+            "branch": {
+                "type": "boolean",
+                "default": true,
+                "description": "Trigger events on new Branches"
+            }
+        },
+        "linear": {
+            "issue": {
+                "type": "boolean",
+                "default": true,
+                "description": "Trigger events on new Issues"
+            }
+        }
+    }
+}
