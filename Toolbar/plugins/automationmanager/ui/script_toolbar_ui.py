@@ -14,10 +14,10 @@ from Toolbar.plugins.automationmanager.script_manager import ScriptManager
 from Toolbar.plugins.templateprompt.prompt_templating import PromptTemplateManager
 from Toolbar.plugins.templateprompt.ui.prompt_templating_ui import PromptTemplatingDialog
 from Toolbar.ui.toolbar_settings import ToolbarSettingsDialog
-from toolkit.plugins.github.ui.github_settings import GitHubSettingsDialog
+from Toolbar.plugins.github.ui.github_settings import GitHubSettingsDialog
 from Toolbar.plugins.linear.linear_settings import LinearSettingsDialog
-from toolkit.plugins.github.ui.github_project_ui import GitHubProjectsDialog
-from toolkit.plugins.github.ui.github_ui import GitHubUI
+from Toolbar.plugins.github.ui.github_project_ui import GitHubProjectsDialog
+from Toolbar.plugins.github.ui.github_ui import GitHubUI
 
 class ScriptToolbar(QMainWindow):
     """Main toolbar window for script execution."""

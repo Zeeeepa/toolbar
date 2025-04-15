@@ -1,0 +1,9 @@
+{
+    "name": "github",
+    "display_name": "GitHub Integration",
+    "version": "1.0.0",
+    "description": "Integrates with GitHub to monitor repositories and provide notifications.",
+    "author": "Toolbar Team",
+    "dependencies": [],
+    "priority": 10
+}

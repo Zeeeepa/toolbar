@@ -3,8 +3,9 @@ import warnings
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
 from PyQt5.QtCore import Qt, QObject, pyqtSignal
 
-# Update the import to use the new github module structure
-from Toolbar.core.github import GitHubMonitor, GitHubProject, GitHubNotification
+# Import from local modules
+from Toolbar.plugins.github.github.monitor import GitHubMonitor
+from Toolbar.plugins.github.github.models import GitHubProject, GitHubNotification
 
 class GitHubManager(QObject):
     """
@@ -106,3 +107,9 @@ class GitHubManager(QObject):
             self.github_monitor.save_projects()
         except Exception as e:
             warnings.warn(f"Failed to save projects: {e}")
+            
+    def cleanup(self):
+        """Clean up resources used by the plugin."""
+        if self.github_monitor:
+            self.github_monitor.stop_monitoring()
+            self.github_monitor.stop_webhook_server()
