@@ -1,4 +1,3 @@
-cat > Toolbar/core/events/event_system.py << 'EOF'
 #!/usr/bin/env python3
 import os
 import sys
@@ -10,7 +9,9 @@ from typing import Dict, List, Any, Optional, Type, Callable, Set, Union, Tuple
 from enum import Enum
 from dataclasses import dataclass, field, asdict
 from PyQt5.QtCore import QObject, pyqtSignal
+
 logger = logging.getLogger(__name__)
+
 class EventType(Enum):
     """Enum representing the types of events."""
     GITHUB_PR_CREATED = "github_pr_created"
@@ -22,6 +23,7 @@ class EventType(Enum):
     LINEAR_ISSUE_UPDATED = "linear_issue_updated"
     LINEAR_ISSUE_CLOSED = "linear_issue_closed"
     CUSTOM = "custom"
+
 class ActionType(Enum):
     """Enum representing the types of actions."""
     SEND_PROMPT = "send_prompt"
@@ -29,6 +31,7 @@ class ActionType(Enum):
     AUTO_MERGE_PR = "auto_merge_pr"
     RUN_SCRIPT = "run_script"
     CUSTOM = "custom"
+
 @dataclass
 class Condition:
     """Class representing a condition for an event trigger."""
@@ -74,6 +77,7 @@ class Condition:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return asdict(self)
+
 @dataclass
 class EventTrigger:
     """Class representing an event trigger."""
@@ -131,6 +135,7 @@ class EventTrigger:
         # Convert conditions to dicts
         data["conditions"] = [cond.to_dict() for cond in self.conditions]
         return data
+
 @dataclass
 class ActionParameter:
     """Class representing a parameter for an action."""
@@ -148,6 +153,7 @@ class ActionParameter:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return asdict(self)
+
 @dataclass
 class Action:
     """Class representing an action to be executed."""
@@ -188,6 +194,7 @@ class Action:
         # Convert parameters to dicts
         data["parameters"] = [param.to_dict() for param in self.parameters]
         return data
+
 @dataclass
 class Event:
     """Class representing an event configuration."""
@@ -227,6 +234,7 @@ class Event:
         # Convert actions to dicts
         data["actions"] = [action.to_dict() for action in self.actions]
         return data
+
 class EventManager(QObject):
     """Manager for handling events and actions."""
     
@@ -280,14 +288,19 @@ class EventManager(QObject):
     
     def register_default_action_handlers(self):
         """Register default action handlers."""
-        # Register handlers for built-in action types
         self.register_action_handler(ActionType.SEND_PROMPT, self._handle_send_prompt)
         self.register_action_handler(ActionType.CREATE_LINEAR_ISSUE, self._handle_create_linear_issue)
         self.register_action_handler(ActionType.AUTO_MERGE_PR, self._handle_auto_merge_pr)
         self.register_action_handler(ActionType.RUN_SCRIPT, self._handle_run_script)
     
     def trigger_event(self, event_type: EventType, data: Dict[str, Any]):
-        """Trigger an event and execute matching actions."""
+        """
+        Trigger an event.
+        
+        Args:
+            event_type: Type of event
+            data: Event data
+        """
         logger.info(f"Event triggered: {event_type.value}")
         
         # Emit event triggered signal
@@ -296,7 +309,7 @@ class EventManager(QObject):
         # Find matching events
         matching_events = []
         for event in self.events:
-            if event.enabled and event.trigger.matches(event_type, data):
+            if event.enabled and event.trigger.enabled and event.trigger.matches(event_type, data):
                 matching_events.append(event)
         
         logger.info(f"Found {len(matching_events)} matching events")
@@ -560,4 +573,3 @@ class EventManager(QObject):
     def get_all_events(self) -> List[Event]:
         """Get all events."""
         return self.events
-EOF

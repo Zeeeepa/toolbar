@@ -1,4 +1,3 @@
-# Toolbar/ui/events/events_ui.py
 #!/usr/bin/env python3
 import os
 import sys
@@ -7,20 +6,51 @@ import logging
 import uuid
 from typing import Dict, List, Any, Optional, Type, Callable, Set, Union, Tuple
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QComboBox,
-    QTabWidget, QWidget, QFormLayout, QLineEdit, QSpinBox, QDoubleSpinBox,
-    QCheckBox, QGroupBox, QRadioButton, QButtonGroup, QFileDialog, QMessageBox,
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QComboBox,
+    QTabWidget, QFormLayout, QLineEdit, QTextEdit, QCheckBox, QGroupBox,
     QListWidget, QListWidgetItem, QTableWidget, QTableWidgetItem, QHeaderView,
-    QTextEdit, QSplitter, QTreeWidget, QTreeWidgetItem, QMenu, QAction,
-    QToolButton, QScrollArea, QFrame, QSizePolicy, QApplication
+    QDialog, QMessageBox, QMenu, QAction, QToolButton, QSplitter, QFrame,
+    QScrollArea, QSizePolicy, QApplication
 )
 from PyQt5.QtCore import Qt, QSettings, QSize, pyqtSignal, QObject
 from PyQt5.QtGui import QIcon, QFont, QColor, QPalette
-from Toolbar.core.events.event_system import (
+
+# Import event system
+from Toolbar.plugins.events.core.event_system import (
     EventManager, Event, EventTrigger, Action, Condition, ActionParameter,
     EventType, ActionType
 )
+
+# Import node editor
+from Toolbar.plugins.events.ui.node_editor import NodeEditorDialog
+
 logger = logging.getLogger(__name__)
+
+class EventsUI(QObject):
+    """UI for the Events plugin."""
+    
+    def __init__(self, event_manager, parent=None):
+        """Initialize the Events UI."""
+        super().__init__(parent)
+        self.event_manager = event_manager
+        self.parent = parent
+        
+        # Create Events button
+        self.events_button = QToolButton()
+        self.events_button.setIcon(QIcon(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                                                "icons", "events.svg")))
+        self.events_button.setToolTip("Events")
+        
+        # Create events dialog
+        self.events_dialog = None
+    
+    def show_events_dialog(self):
+        """Show the events dialog."""
+        if not self.events_dialog:
+            self.events_dialog = EventsDialog(self.event_manager, self.parent)
+        
+        self.events_dialog.exec_()
+
 class EventsDialog(QDialog):
     """Dialog for managing events."""
     
@@ -107,6 +137,11 @@ class EventsDialog(QDialog):
         actions_tab = QWidget()
         tab_widget.addTab(actions_tab, "Actions")
         self._create_actions_tab(actions_tab)
+        
+        # Add node editor button
+        node_editor_button = QPushButton("Open Node Flow Editor")
+        node_editor_button.clicked.connect(self._open_node_editor)
+        event_details_layout.addWidget(node_editor_button)
         
         # Add save button
         save_button = QPushButton("Save Event")
@@ -275,7 +310,6 @@ class EventsDialog(QDialog):
         
         self.event_details_widget.setEnabled(True)
         
-        # Get the selected event
         event_id = current.data(Qt.UserRole)
         event = self.event_manager.get_event(event_id)
         
@@ -316,7 +350,7 @@ class EventsDialog(QDialog):
             item.setData(Qt.UserRole, action.id)
             self.actions_list.addItem(item)
         
-        # Clear action details
+        # Disable action details until an action is selected
         self.action_details_group.setEnabled(False)
     
     def _on_action_selected(self, current, previous):
@@ -327,14 +361,16 @@ class EventsDialog(QDialog):
         
         self.action_details_group.setEnabled(True)
         
-        # Get the selected event
-        event_id = self.events_list.currentItem().data(Qt.UserRole)
+        current_event_item = self.events_list.currentItem()
+        if not current_event_item:
+            return
+        
+        event_id = current_event_item.data(Qt.UserRole)
         event = self.event_manager.get_event(event_id)
         
         if not event:
             return
         
-        # Get the selected action
         action_id = current.data(Qt.UserRole)
         action = next((a for a in event.actions if a.id == action_id), None)
         
@@ -350,14 +386,14 @@ class EventsDialog(QDialog):
         
         # Update parameters
         self.parameters_table.setRowCount(0)
-        for param in action.parameters:
+        for parameter in action.parameters:
             row = self.parameters_table.rowCount()
             self.parameters_table.insertRow(row)
             
-            name_item = QTableWidgetItem(param.name)
+            name_item = QTableWidgetItem(parameter.name)
             self.parameters_table.setItem(row, 0, name_item)
             
-            value_item = QTableWidgetItem(str(param.value))
+            value_item = QTableWidgetItem(str(parameter.value))
             self.parameters_table.setItem(row, 1, value_item)
     
     def _on_action_type_changed(self, index):
@@ -646,3 +682,22 @@ class EventsDialog(QDialog):
         
         row = selected_items[0].row()
         self.parameters_table.removeRow(row)
+    
+    def _open_node_editor(self):
+        """Open the node flow editor."""
+        current_item = self.events_list.currentItem()
+        if not current_item:
+            return
+        
+        event_id = current_item.data(Qt.UserRole)
+        event = self.event_manager.get_event(event_id)
+        
+        if not event:
+            return
+        
+        # Open node editor dialog
+        dialog = NodeEditorDialog(self.event_manager, event, self)
+        dialog.exec_()
+        
+        # Reload event after node editor
+        self._load_events()
