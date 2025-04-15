@@ -1,17 +1,31 @@
+#!/usr/bin/env python3
 """
 Events plugin for the Toolbar application.
+
 This plugin provides a visual node-based flow editor for creating event-driven automations.
+It integrates with other plugins like GitHub and Linear to trigger events and perform actions.
 """
 
 import os
+import sys
+import json
 import logging
+import threading
+import time
+from typing import Dict, List, Any, Optional, Type, Callable, Set, Union, Tuple
 from PyQt5.QtCore import QObject, pyqtSignal
-from PyQt5.QtGui import QIcon
 
-# Import from local modules
+# Import plugin system
 from Toolbar.core.plugin_system import Plugin
-from Toolbar.core.config import Config
 
+# Import event system
+from Toolbar.plugins.events.core.event_manager import EventManager
+from Toolbar.plugins.events.core.event_system import EventType
+
+# Import UI
+from Toolbar.plugins.events.ui.events_ui import EventsUI
+
+# Set up logger
 logger = logging.getLogger(__name__)
 
 class EventsPlugin(Plugin):
@@ -19,67 +33,76 @@ class EventsPlugin(Plugin):
     
     def __init__(self):
         """Initialize the Events plugin."""
-        super().__init__()
-        self.name = "Events"
-        self.description = "Create event-driven automations with a visual node-based flow editor."
-        self.version = "1.0.0"
         self.event_manager = None
         self.events_ui = None
-        self.toolbar_button = None
-        
+        self.github_events = None
+        self.linear_events = None
+    
     def initialize(self, config):
         """
         Initialize the Events plugin.
         
         Args:
-            config: Configuration object
+            config: Application configuration
+            
+        Returns:
+            bool: True if initialization was successful, False otherwise
         """
-        logger.info("Initializing Events plugin")
-        
-        # Create event manager
         try:
-            from Toolbar.plugins.events.core.event_manager import EventManager
+            # Initialize event manager
             self.event_manager = EventManager(config)
             
-            # Create Events UI
-            from Toolbar.plugins.events.ui.events_ui import EventsUI
-            from Toolbar.main import get_toolbar_instance
-            toolbar = get_toolbar_instance()
-            if toolbar:
-                self.events_ui = EventsUI(self.event_manager, toolbar)
-                
-                # Add Events button to the toolbar
-                if hasattr(toolbar, 'toolbar'):
-                    # Create Events button
-                    self.toolbar_button = self.events_ui.events_button
-                    
-                    # Add button to the toolbar
-                    toolbar.toolbar.addWidget(self.toolbar_button)
-                    
-                    # Connect button click to show Events dialog
-                    self.toolbar_button.clicked.connect(self.events_ui.show_events_dialog)
-                    
-                    logger.info("Events button added to toolbar")
-        except Exception as e:
-            logger.error(f"Error initializing Events plugin: {e}")
-            return False
-        
-        # Register event handlers for GitHub events
-        try:
-            from Toolbar.plugins.github.github.monitor import GitHubMonitor
-            from Toolbar.main import get_plugin_instance
+            # Initialize UI
+            self.events_ui = EventsUI(self.event_manager)
             
-            github_plugin = get_plugin_instance("GitHub Integration")
-            if github_plugin and hasattr(github_plugin, 'github_manager') and github_plugin.github_manager:
-                github_monitor = github_plugin.github_manager.github_monitor
-                if github_monitor:
-                    # Connect GitHub webhook events to event manager
-                    github_monitor.webhook_notification_received.connect(self._handle_github_notification)
-                    logger.info("Connected to GitHub webhook events")
+            # Register event handlers for GitHub events
+            try:
+                from Toolbar.main import get_plugin_instance
+                
+                github_plugin = get_plugin_instance("GitHub Integration")
+                if github_plugin and hasattr(github_plugin, 'github_manager') and github_plugin.github_manager:
+                    github_manager = github_plugin.github_manager
+                    if hasattr(github_manager, 'notification_received'):
+                        # Connect GitHub events to event manager
+                        github_manager.notification_received.connect(self._handle_github_notification)
+                        logger.info("Connected to GitHub events")
+            except Exception as e:
+                logger.warning(f"Could not connect to GitHub events: {e}")
+            
+            # Register event handlers for Linear events
+            try:
+                from Toolbar.main import get_plugin_instance
+                
+                linear_plugin = get_plugin_instance("Linear Integration")
+                if linear_plugin and hasattr(linear_plugin, 'integration') and linear_plugin.integration:
+                    linear_integration = linear_plugin.integration
+                    
+                    # Connect Linear issue created event
+                    if hasattr(linear_integration, 'issue_created'):
+                        linear_integration.issue_created.connect(self._handle_linear_issue_created)
+                        logger.info("Connected to Linear issue created events")
+                    
+                    # Add custom signals for issue updated and closed if they don't exist
+                    if not hasattr(linear_integration, 'issue_updated'):
+                        linear_integration.issue_updated = pyqtSignal(object)
+                        logger.info("Added Linear issue updated signal")
+                    
+                    if not hasattr(linear_integration, 'issue_closed'):
+                        linear_integration.issue_closed = pyqtSignal(object)
+                        logger.info("Added Linear issue closed signal")
+                    
+                    # Connect the signals
+                    linear_integration.issue_updated.connect(self._handle_linear_issue_updated)
+                    linear_integration.issue_closed.connect(self._handle_linear_issue_closed)
+                    
+                    logger.info("Connected to Linear events")
+            except Exception as e:
+                logger.warning(f"Could not connect to Linear events: {e}")
+            
+            return True
         except Exception as e:
-            logger.warning(f"Could not connect to GitHub events: {e}")
-        
-        return True
+            logger.error(f"Failed to initialize Events plugin: {e}", exc_info=True)
+            return False
     
     def _handle_github_notification(self, notification):
         """
@@ -96,15 +119,13 @@ class EventsPlugin(Plugin):
         event_type = None
         
         # Determine event type based on notification type
-        if notification.type == "pr":
-            action = event_data.get('action', '')
-            if action == 'opened' or action == 'reopened':
-                event_type = "github_pr_created"
-            elif action == 'synchronize':
-                event_type = "github_pr_updated"
-            elif action == 'closed' and event_data.get('pull_request', {}).get('merged', False):
-                event_type = "github_pr_merged"
-        elif notification.type == "branch":
+        if notification.type == "pull_request" and notification.action == "opened":
+            event_type = "github_pr_created"
+        elif notification.type == "pull_request" and notification.action in ["synchronize", "edited"]:
+            event_type = "github_pr_updated"
+        elif notification.type == "pull_request" and notification.action == "closed" and event_data.get("pull_request", {}).get("merged", False):
+            event_type = "github_pr_merged"
+        elif notification.type == "create" and notification.ref_type == "branch":
             event_type = "github_branch_created"
         elif notification.type == "push":
             event_type = "github_repo_updated"
@@ -119,25 +140,92 @@ class EventsPlugin(Plugin):
             except ValueError:
                 logger.warning(f"Unknown event type: {event_type}")
     
+    def _handle_linear_issue_created(self, issue_data):
+        """
+        Handle Linear issue created event.
+        
+        Args:
+            issue_data: Linear issue data
+        """
+        if not self.event_manager:
+            return
+            
+        # Trigger event
+        from Toolbar.plugins.events.core.event_system import EventType
+        try:
+            event_type_enum = EventType.LINEAR_ISSUE_CREATED
+            self.event_manager.trigger_event(event_type_enum, issue_data)
+            logger.info(f"Triggered event: linear_issue_created")
+        except Exception as e:
+            logger.warning(f"Error triggering Linear issue created event: {e}")
+    
+    def _handle_linear_issue_updated(self, issue_data):
+        """
+        Handle Linear issue updated event.
+        
+        Args:
+            issue_data: Linear issue data
+        """
+        if not self.event_manager:
+            return
+            
+        # Trigger event
+        from Toolbar.plugins.events.core.event_system import EventType
+        try:
+            event_type_enum = EventType.LINEAR_ISSUE_UPDATED
+            self.event_manager.trigger_event(event_type_enum, issue_data)
+            logger.info(f"Triggered event: linear_issue_updated")
+        except Exception as e:
+            logger.warning(f"Error triggering Linear issue updated event: {e}")
+    
+    def _handle_linear_issue_closed(self, issue_data):
+        """
+        Handle Linear issue closed event.
+        
+        Args:
+            issue_data: Linear issue data
+        """
+        if not self.event_manager:
+            return
+            
+        # Trigger event
+        from Toolbar.plugins.events.core.event_system import EventType
+        try:
+            event_type_enum = EventType.LINEAR_ISSUE_CLOSED
+            self.event_manager.trigger_event(event_type_enum, issue_data)
+            logger.info(f"Triggered event: linear_issue_closed")
+        except Exception as e:
+            logger.warning(f"Error triggering Linear issue closed event: {e}")
+    
     def get_icon(self):
         """Get the icon for the plugin to display in the taskbar."""
         icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons", "events.svg")
-        if os.path.exists(icon_path):
-            return QIcon(icon_path)
-        return QIcon.fromTheme("flow-branch")
+        return icon_path
     
-    def get_title(self):
-        """Get the title for the plugin to display in the taskbar."""
-        return "Events"
+    def get_toolbar_widget(self):
+        """Get the toolbar widget for the plugin."""
+        if self.events_ui:
+            return self.events_ui.events_button
+        return None
     
-    def activate(self):
-        """Activate the plugin when its taskbar button is clicked."""
+    def handle_toolbar_action(self):
+        """Handle toolbar action (button click)."""
         if self.events_ui:
             self.events_ui.show_events_dialog()
     
     def cleanup(self):
-        """Clean up resources used by the plugin."""
-        logger.info("Cleaning up Events plugin")
+        """Clean up plugin resources."""
         if self.event_manager:
             self.event_manager.cleanup()
-        return True
+    
+    @property
+    def name(self) -> str:
+        return "Events"
+    
+    @property
+    def version(self) -> str:
+        return "1.0.0"
+    
+    @property
+    def description(self) -> str:
+        return "Create event-driven automations with a visual node-based flow editor."
