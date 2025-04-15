@@ -1,100 +1,126 @@
-import os
 import warnings
 import webbrowser
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-                            QPushButton, QToolButton, QMenu, QAction, QTabWidget, QDialog, QMessageBox)
+                            QPushButton, QToolButton, QMenu, QAction, QTabWidget, QDialog, QMessageBox,
+                            QCheckBox, QGroupBox, QFormLayout, QLineEdit, QComboBox, QListWidget, QListWidgetItem)
 from PyQt5.QtGui import QIcon, QCursor
 from PyQt5.QtCore import Qt, pyqtSignal
 
-# Update import to use the core/github_manager module
-from Toolbar.core.github_manager import GitHubManager
-from Toolbar.plugins.github.ui.github_project_ui import ProjectWidget, GitHubProjectsDialog
+import os
+import json
+import logging
+from datetime import datetime
+
+# Import from local modules
 from Toolbar.plugins.github.ui.github_settings import GitHubSettingsDialog
+from Toolbar.plugins.github.ui.github_project_ui import GitHubProjectsDialog
+from Toolbar.plugins.github.ui.project_icon_ui import ProjectIconWidget
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 class NotificationWidget(QWidget):
-    """Widget for displaying a GitHub notification."""
-    
-    closed = pyqtSignal(object)  # Emits self when closed
+    """
+    Widget for displaying a GitHub notification.
+    """
     
     def __init__(self, notification, parent=None):
         """
-        Initialize a notification widget.
+        Initialize the notification widget.
         
         Args:
-            notification (GitHubNotification): The notification to display
-            parent (QWidget, optional): Parent widget
+            notification: The notification to display
+            parent: Parent widget
         """
         super().__init__(parent)
         self.notification = notification
+        self.parent_ui = parent
+        self.init_ui()
         
-        # Set up the UI
+    def init_ui(self):
+        """Initialize the UI."""
         layout = QHBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
         
-        # Notification icon
+        # Icon based on notification type
         icon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-                                "icons", "notification.svg")
-        if os.path.exists(icon_path):
-            icon_label = QLabel()
-            icon_label.setPixmap(QIcon(icon_path).pixmap(16, 16))
-            layout.addWidget(icon_label)
+                                "icons", f"{self.notification.type}.svg")
+        if not os.path.exists(icon_path):
+            icon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                                    "icons", "notification.svg")
+        
+        icon_label = QLabel()
+        icon_label.setPixmap(QIcon(icon_path).pixmap(16, 16))
+        layout.addWidget(icon_label)
         
         # Notification text
-        text_label = QLabel(notification.title)
+        text_label = QLabel(self.notification.message)
         text_label.setWordWrap(True)
         layout.addWidget(text_label, 1)
         
+        # Time
+        time_str = self.notification.timestamp.strftime("%H:%M")
+        time_label = QLabel(time_str)
+        time_label.setStyleSheet("color: gray;")
+        layout.addWidget(time_label)
+        
         # Open button
         open_button = QPushButton("Open")
+        open_button.setToolTip("Open in browser")
         open_button.clicked.connect(self.open_notification)
         layout.addWidget(open_button)
         
         # Close button
-        close_button = QPushButton("Dismiss")
-        close_button.clicked.connect(self.close_notification)
+        close_button = QPushButton("×")
+        close_button.setToolTip("Dismiss notification")
+        close_button.setMaximumWidth(20)
+        close_button.clicked.connect(self.remove_notification)
         layout.addWidget(close_button)
         
-        # Set cursor to pointing hand
-        self.setCursor(Qt.PointingHandCursor)
-    
+        # Set background color
+        self.setStyleSheet("background-color: #f0f0f0; border-radius: 5px;")
+        
     def open_notification(self):
         """Open the notification URL in a browser."""
-        webbrowser.open(self.notification.url)
-    
-    def close_notification(self):
-        """Close the notification."""
-        self.closed.emit(self)
-        self.deleteLater()
+        try:
+            webbrowser.open(self.notification.url)
+        except Exception as e:
+            warnings.warn(f"Failed to open notification URL: {e}")
+            
+    def remove_notification(self):
+        """Remove the notification."""
+        try:
+            if self.parent_ui and hasattr(self.parent_ui, 'remove_notification'):
+                self.parent_ui.remove_notification(self)
+        except Exception as e:
+            warnings.warn(f"Failed to remove notification: {e}")
 
 class GitHubUI(QWidget):
-    """UI component for GitHub functionality."""
+    """
+    Main UI for GitHub integration.
+    """
     
     def __init__(self, github_monitor, parent=None):
         """
         Initialize the GitHub UI.
         
         Args:
-            github_monitor (GitHubMonitor): The GitHub monitor instance
-            parent (QWidget, optional): Parent widget
+            github_monitor: The GitHub monitor instance
+            parent: Parent widget
         """
         super().__init__(parent)
-        
-        # Create GitHub manager
-        self.github_manager = GitHubManager(github_monitor, self)
         self.github_monitor = github_monitor
-        
-        # Set up UI
-        self.init_ui()
+        self.parent = parent
         
         # Connect signals
-        self.github_monitor.notification_received.connect(self.add_github_notification)
+        self.github_monitor.notification_received.connect(self.add_notification)
         self.github_monitor.project_notification_received.connect(self.add_project_notification)
         
-        # Load pinned projects
+        self.init_ui()
         self.load_pinned_projects()
-    
+        
     def init_ui(self):
-        """Initialize the user interface."""
+        """Initialize the UI."""
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         
@@ -120,34 +146,15 @@ class GitHubUI(QWidget):
         self.projects_layout.setSpacing(5)
         main_layout.addWidget(projects_container)
         
-        # Notification container
-        self.notification_container = QWidget()
-        self.notification_container.setVisible(False)
-        notification_container_layout = QVBoxLayout(self.notification_container)
-        notification_container_layout.setContentsMargins(0, 0, 0, 0)
+        # Notifications container
+        notifications_container = QWidget()
+        self.notifications_layout = QVBoxLayout(notifications_container)
+        self.notifications_layout.setContentsMargins(10, 10, 10, 10)
+        self.notifications_layout.setSpacing(5)
+        main_layout.addWidget(notifications_container)
         
-        # Notification header
-        notification_header = QWidget()
-        notification_header_layout = QHBoxLayout(notification_header)
-        notification_header_layout.setContentsMargins(5, 5, 5, 5)
-        
-        notification_header_label = QLabel("GitHub Notifications")
-        notification_header_layout.addWidget(notification_header_label)
-        
-        clear_all_button = QPushButton("Clear All")
-        clear_all_button.clicked.connect(self.clear_all_notifications)
-        notification_header_layout.addWidget(clear_all_button)
-        
-        notification_container_layout.addWidget(notification_header)
-        
-        # Notification list
-        notification_list = QWidget()
-        self.notification_layout = QVBoxLayout(notification_list)
-        self.notification_layout.setContentsMargins(0, 0, 0, 0)
-        self.notification_layout.setSpacing(0)
-        notification_container_layout.addWidget(notification_list)
-        
-        main_layout.addWidget(self.notification_container)
+        # Add stretch to push everything to the top
+        main_layout.addStretch(1)
         
         # Initialize collections
         self.notification_widgets = []
@@ -196,13 +203,30 @@ class GitHubUI(QWidget):
         
         # PR notifications checkbox
         self.pr_notifications_checkbox = QCheckBox("Notify on new Pull Requests")
-        self.pr_notifications_checkbox.setChecked(True)
+        self.pr_notifications_checkbox.setChecked(self.github_monitor.get_setting("notify_pr", True))
         monitoring_layout.addWidget(self.pr_notifications_checkbox)
         
         # Branch notifications checkbox
         self.branch_notifications_checkbox = QCheckBox("Notify on new Branches")
-        self.branch_notifications_checkbox.setChecked(True)
+        self.branch_notifications_checkbox.setChecked(self.github_monitor.get_setting("notify_branch", True))
         monitoring_layout.addWidget(self.branch_notifications_checkbox)
+        
+        # Notification display options
+        notification_display_group = QGroupBox("Notification Display")
+        notification_display_layout = QVBoxLayout(notification_display_group)
+        
+        # Show notification badge checkbox
+        self.show_badge_checkbox = QCheckBox("Show notification badge on GitHub icon")
+        self.show_badge_checkbox.setChecked(self.github_monitor.get_setting("show_badge", True))
+        notification_display_layout.addWidget(self.show_badge_checkbox)
+        
+        # Show project badges checkbox
+        self.show_project_badges_checkbox = QCheckBox("Show notification badges on project icons")
+        self.show_project_badges_checkbox.setChecked(self.github_monitor.get_setting("show_project_badges", True))
+        notification_display_layout.addWidget(self.show_project_badges_checkbox)
+        
+        # Add notification display group to monitoring layout
+        monitoring_layout.addWidget(notification_display_group)
         
         # Save monitoring settings button
         save_monitoring_button = QPushButton("Save Notification Settings")
@@ -222,13 +246,16 @@ class GitHubUI(QWidget):
         pr_settings_layout.addWidget(pr_settings_label)
         
         # Auto-merge rules
-        auto_merge_label = QLabel("Auto-merge Rules")
-        auto_merge_label.setStyleSheet("font-weight: bold;")
-        pr_settings_layout.addWidget(auto_merge_label)
+        auto_merge_group = QGroupBox("Auto-merge Rules")
+        auto_merge_layout = QVBoxLayout(auto_merge_group)
         
         # Auto-merge markdown and prompt files
         self.auto_merge_md_prompt_checkbox = QCheckBox("Auto-merge when only .md and .prompt files are changed")
-        pr_settings_layout.addWidget(self.auto_merge_md_prompt_checkbox)
+        self.auto_merge_md_prompt_checkbox.setChecked(self.github_monitor.get_setting("auto_merge_md_prompt", False))
+        auto_merge_layout.addWidget(self.auto_merge_md_prompt_checkbox)
+        
+        # Add auto-merge group to PR settings layout
+        pr_settings_layout.addWidget(auto_merge_group)
         
         # Save PR settings button
         save_pr_settings_button = QPushButton("Save PR Settings")
@@ -256,9 +283,18 @@ class GitHubUI(QWidget):
         """Save monitoring settings."""
         try:
             # Save notification settings
-            self.github_monitor.config.set_setting("github.notify_pr", self.pr_notifications_checkbox.isChecked())
-            self.github_monitor.config.set_setting("github.notify_branch", self.branch_notifications_checkbox.isChecked())
+            self.github_monitor.set_setting("notify_pr", self.pr_notifications_checkbox.isChecked())
+            self.github_monitor.set_setting("notify_branch", self.branch_notifications_checkbox.isChecked())
+            self.github_monitor.set_setting("show_badge", self.show_badge_checkbox.isChecked())
+            self.github_monitor.set_setting("show_project_badges", self.show_project_badges_checkbox.isChecked())
             self.github_monitor.config.save()
+            
+            # Update UI based on new settings
+            self.update_notification_badge()
+            
+            # Update project badges
+            for project_name, project_widget in self.project_widgets.items():
+                project_widget.update_notification_badge()
             
             # Show success message
             QMessageBox.information(self, "Success", "Notification settings saved successfully.")
@@ -270,7 +306,7 @@ class GitHubUI(QWidget):
         """Save PR settings."""
         try:
             # Save PR settings
-            self.github_monitor.config.set_setting("github.auto_merge_md_prompt", self.auto_merge_md_prompt_checkbox.isChecked())
+            self.github_monitor.set_setting("auto_merge_md_prompt", self.auto_merge_md_prompt_checkbox.isChecked())
             self.github_monitor.config.save()
             
             # Show success message
@@ -281,159 +317,162 @@ class GitHubUI(QWidget):
     
     def show_github_settings(self):
         """Show GitHub settings dialog."""
-        dialog = GitHubSettingsDialog(self.github_monitor, self)
-        dialog.exec_()
+        try:
+            dialog = GitHubSettingsDialog(self.github_monitor, self)
+            dialog.exec_()
+        except Exception as e:
+            warnings.warn(f"Failed to show GitHub settings: {e}")
     
     def show_projects_dialog(self):
         """Show GitHub projects dialog."""
-        dialog = GitHubProjectsDialog(self.github_monitor, self)
-        if dialog.exec_():
-            # Reload pinned projects
-            self.load_pinned_projects()
+        try:
+            dialog = GitHubProjectsDialog(self.github_monitor, self)
+            if dialog.exec_():
+                self.load_pinned_projects()
+        except Exception as e:
+            warnings.warn(f"Failed to show GitHub projects: {e}")
     
     def toggle_notifications(self):
-        """Toggle notification panel visibility."""
-        self.notification_container.setVisible(not self.notification_container.isVisible())
-    
-    def add_github_notification(self, notification):
-        """
-        Add a GitHub notification.
-        
-        Args:
-            notification (GitHubNotification): The notification to add
-        """
-        # Create notification widget
-        notification_widget = NotificationWidget(notification, self)
-        notification_widget.closed.connect(self.remove_notification)
-        
-        # Add to layout
-        self.notification_layout.insertWidget(0, notification_widget)
-        self.notification_widgets.append(notification_widget)
-        
-        # Update notification badge
-        self.update_notification_badge()
-        
-        # Update GitHub manager
-        self.github_manager.notification_widgets = self.notification_widgets
-    
-    def add_project_notification(self, project, notification):
-        """
-        Add a notification to a project.
-        
-        Args:
-            project (GitHubProject): The project to add the notification to
-            notification (GitHubNotification): The notification to add
-        """
-        # Update project widget if it exists
-        if project.full_name in self.project_widgets:
-            self.project_widgets[project.full_name].update_notification_badge()
-        
-        # Update GitHub manager
-        self.github_manager.project_widgets = self.project_widgets
-    
-    def remove_notification(self, notification_widget):
-        """
-        Remove a notification.
-        
-        Args:
-            notification_widget (NotificationWidget): The notification widget to remove
-        """
-        if notification_widget in self.notification_widgets:
-            self.notification_widgets.remove(notification_widget)
-            self.notification_layout.removeWidget(notification_widget)
-            notification_widget.deleteLater()
-            
-            # Update notification badge
-            self.update_notification_badge()
-            
-            # Update GitHub manager
-            self.github_manager.notification_widgets = self.notification_widgets
-    
-    def clear_all_notifications(self):
-        """Remove all notifications."""
-        # Remove all notifications
-        while self.notification_widgets:
-            notification_widget = self.notification_widgets.pop()
-            self.notification_layout.removeWidget(notification_widget)
-            notification_widget.deleteLater()
-        
-        # Update notification badge
-        self.update_notification_badge()
-        
-        # Hide notification container if visible
-        if self.notification_container.isVisible():
-            self.notification_container.setVisible(False)
-        
-        # Update GitHub manager
-        self.github_manager.notification_widgets = self.notification_widgets
-    
-    def clear_all_project_notifications(self):
-        """Clear all notifications for all projects."""
-        for project_name, project_widget in self.project_widgets.items():
-            project = project_widget.project
-            project.notifications = []
-            project_widget.update_notification_badge()
-        
-        # Update GitHub manager
-        self.github_manager.project_widgets = self.project_widgets
-    
-    def update_notification_badge(self):
-        """Update the notification badge count."""
-        count = len(self.notification_widgets)
-        self.notification_badge.setText(str(count))
-        self.notification_badge.setVisible(count > 0)
+        """Toggle notifications panel."""
+        pass
     
     def load_pinned_projects(self):
         """Load pinned projects from GitHub monitor."""
-        # Clear existing project widgets
-        for widget in self.project_widgets.values():
-            self.projects_layout.removeWidget(widget)
-            widget.deleteLater()
-        self.project_widgets = {}
-        
-        # Add widgets for pinned projects
-        for project in self.github_monitor.get_projects():
-            if project.pinned:
-                self.add_project_widget(project)
-        
-        # Update GitHub manager
-        self.github_manager.project_widgets = self.project_widgets
+        try:
+            # Clear existing project widgets
+            for widget in self.project_widgets.values():
+                self.projects_layout.removeWidget(widget)
+                widget.deleteLater()
+            self.project_widgets = {}
+            
+            # Add project widgets for pinned projects
+            for project in self.github_monitor.projects.values():
+                if project.pinned:
+                    self.add_project_widget(project)
+        except Exception as e:
+            warnings.warn(f"Failed to load pinned projects: {e}")
     
     def add_project_widget(self, project):
         """
         Add a project widget.
         
         Args:
-            project (GitHubProject): The project to add
+            project: The project to add
         """
-        # Create project widget
-        project_widget = ProjectWidget(project, self)
-        
-        # Add to layout
-        self.projects_layout.addWidget(project_widget)
-        self.project_widgets[project.full_name] = project_widget
-        
-        # Update GitHub manager
-        self.github_manager.project_widgets = self.project_widgets
+        try:
+            # Create project widget
+            project_widget = ProjectIconWidget(project, self)
+            
+            # Add to layout
+            self.projects_layout.addWidget(project_widget)
+            
+            # Store reference
+            self.project_widgets[project.full_name] = project_widget
+        except Exception as e:
+            warnings.warn(f"Failed to add project widget: {e}")
     
-    def remove_project_widget(self, widget):
+    def add_notification(self, notification):
         """
-        Remove a project widget.
+        Add a notification.
         
         Args:
-            widget (ProjectWidget): The project widget to remove
+            notification: The notification to add
         """
-        project = widget.project
-        if project.full_name in self.project_widgets:
-            self.projects_layout.removeWidget(widget)
-            widget.deleteLater()
-            del self.project_widgets[project.full_name]
+        try:
+            # Check if notifications are enabled for this type
+            if notification.type == "pr" and not self.github_monitor.get_setting("notify_pr", True):
+                return
+            if notification.type == "branch" and not self.github_monitor.get_setting("notify_branch", True):
+                return
+                
+            # Create notification widget
+            notification_widget = NotificationWidget(notification, self)
             
-            # Save projects
-            try:
-                self.github_monitor.save_projects()
-            except Exception as e:
-                warnings.warn(f"Failed to save projects: {e}")
+            # Add to layout
+            self.notifications_layout.insertWidget(0, notification_widget)
             
-            # Update GitHub manager
-            self.github_manager.project_widgets = self.project_widgets
+            # Store reference
+            self.notification_widgets.append(notification_widget)
+            
+            # Update notification badge
+            self.update_notification_badge()
+        except Exception as e:
+            warnings.warn(f"Failed to add notification: {e}")
+    
+    def add_project_notification(self, project, notification):
+        """
+        Add a notification to a project.
+        
+        Args:
+            project: The project to add the notification to
+            notification: The notification to add
+        """
+        try:
+            # Update project widget if it exists
+            if project.full_name in self.project_widgets:
+                self.project_widgets[project.full_name].update_notification_badge()
+        except Exception as e:
+            warnings.warn(f"Failed to add project notification: {e}")
+    
+    def remove_notification(self, notification_widget):
+        """
+        Remove a notification.
+        
+        Args:
+            notification_widget: The notification widget to remove
+        """
+        try:
+            # Remove from layout
+            self.notifications_layout.removeWidget(notification_widget)
+            notification_widget.deleteLater()
+            
+            # Remove from list
+            if notification_widget in self.notification_widgets:
+                self.notification_widgets.remove(notification_widget)
+                
+            # Update notification badge
+            self.update_notification_badge()
+        except Exception as e:
+            warnings.warn(f"Failed to remove notification: {e}")
+    
+    def update_notification_badge(self):
+        """Update the notification badge."""
+        try:
+            # Count notifications
+            count = len(self.notification_widgets)
+            
+            # Update badge text
+            self.notification_badge.setText(str(count))
+            
+            # Show/hide badge based on count and settings
+            show_badge = self.github_monitor.get_setting("show_badge", True)
+            self.notification_badge.setVisible(count > 0 and show_badge)
+        except Exception as e:
+            warnings.warn(f"Failed to update notification badge: {e}")
+    
+    def clear_all_notifications(self):
+        """Clear all notifications."""
+        try:
+            # Remove all notification widgets
+            for widget in self.notification_widgets:
+                self.notifications_layout.removeWidget(widget)
+                widget.deleteLater()
+            
+            # Clear list
+            self.notification_widgets = []
+            
+            # Update notification badge
+            self.update_notification_badge()
+        except Exception as e:
+            warnings.warn(f"Failed to clear notifications: {e}")
+    
+    def clear_all_project_notifications(self):
+        """Clear all notifications for all projects."""
+        try:
+            # Clear notifications for each project
+            for project_name, project_widget in self.project_widgets.items():
+                project = project_widget.project
+                project.notifications = []
+                project_widget.update_notification_badge()
+        except Exception as e:
+            warnings.warn(f"Failed to clear project notifications: {e}")
