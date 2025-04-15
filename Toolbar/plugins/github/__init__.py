@@ -2,8 +2,10 @@
 GitHub integration plugin for the Toolbar application.
 """
 
+import os
 import logging
 from PyQt5.QtCore import QObject, pyqtSignal
+from PyQt5.QtGui import QIcon
 
 # Import from local modules
 from Toolbar.plugins.github.github.monitor import GitHubMonitor
@@ -24,6 +26,7 @@ class GitHubPlugin(Plugin):
         self.version = "1.0.0"
         self.github_manager = None
         self.github_ui = None
+        self.toolbar_button = None
         
     def initialize(self, config):
         """
@@ -40,11 +43,39 @@ class GitHubPlugin(Plugin):
         # Create GitHub manager
         self.github_manager = GitHubManager(github_monitor)
         
+        # Create GitHub UI
+        try:
+            from Toolbar.plugins.github.ui.github_ui import GitHubUI
+            from Toolbar.main import get_toolbar_instance
+            toolbar = get_toolbar_instance()
+            if toolbar:
+                self.github_ui = GitHubUI(self.github_manager.github_monitor, toolbar)
+                
+                # Add GitHub button to the left side of the toolbar
+                if hasattr(toolbar, 'toolbar'):
+                    # Create GitHub button
+                    self.toolbar_button = self.github_ui.github_button
+                    
+                    # Add button to the left side of the toolbar
+                    toolbar.toolbar.insertWidget(0, self.toolbar_button)
+                    
+                    # Add notification badge next to the button
+                    toolbar.toolbar.insertWidget(1, self.github_ui.notification_badge)
+                    
+                    # Connect button click to show GitHub dialog
+                    self.toolbar_button.clicked.connect(self.github_ui.show_github_dialog)
+                    
+                    logger.info("GitHub button added to toolbar")
+        except Exception as e:
+            logger.error(f"Error creating GitHub UI: {e}")
+        
         return True
     
     def get_icon(self):
         """Get the icon for the plugin to display in the taskbar."""
-        from PyQt5.QtGui import QIcon
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons", "github.svg")
+        if os.path.exists(icon_path):
+            return QIcon(icon_path)
         return QIcon.fromTheme("github")
     
     def get_title(self):
@@ -53,18 +84,8 @@ class GitHubPlugin(Plugin):
     
     def activate(self):
         """Activate the plugin when its taskbar button is clicked."""
-        if not self.github_ui:
-            try:
-                from Toolbar.plugins.github.ui.github_ui import GitHubUI
-                from Toolbar.main import get_toolbar_instance
-                toolbar = get_toolbar_instance()
-                if toolbar:
-                    self.github_ui = GitHubUI(self.github_manager, toolbar)
-                    self.github_ui.show()
-            except Exception as e:
-                logger.error(f"Error creating GitHub UI: {e}")
-        elif self.github_ui:
-            self.github_ui.show()
+        if self.github_ui:
+            self.github_ui.show_github_dialog()
     
     def cleanup(self):
         """Clean up resources used by the plugin."""
