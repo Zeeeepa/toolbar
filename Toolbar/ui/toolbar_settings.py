@@ -1,7 +1,8 @@
 import os
 import warnings
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-                           QComboBox, QSlider, QPushButton, QFormLayout)
+                           QComboBox, QSlider, QPushButton, QFormLayout,
+                           QGroupBox, QRadioButton, QButtonGroup, QCheckBox)
 from PyQt5.QtCore import Qt
 
 # Suppress PyQt5 deprecation warnings
@@ -20,7 +21,7 @@ class ToolbarSettingsDialog(QDialog):
         """
         super().__init__(parent)
         self.setWindowTitle("Toolbar Settings")
-        self.setMinimumSize(400, 300)
+        self.setMinimumSize(450, 350)
         
         self.config = config
         
@@ -42,12 +43,32 @@ class ToolbarSettingsDialog(QDialog):
         main_layout.addLayout(form_layout)
         
         # Position setting
-        self.position_combo = QComboBox()
-        self.position_combo.addItems(["top", "bottom", "left", "right"])
-        form_layout.addRow("Position:", self.position_combo)
+        position_group = QGroupBox("Toolbar Position")
+        position_layout = QVBoxLayout(position_group)
+        
+        self.position_top = QRadioButton("Top")
+        self.position_bottom = QRadioButton("Bottom")
+        self.position_left = QRadioButton("Left")
+        self.position_right = QRadioButton("Right")
+        
+        self.position_group = QButtonGroup(self)
+        self.position_group.addButton(self.position_top, 1)
+        self.position_group.addButton(self.position_bottom, 2)
+        self.position_group.addButton(self.position_left, 3)
+        self.position_group.addButton(self.position_right, 4)
+        
+        position_layout.addWidget(self.position_top)
+        position_layout.addWidget(self.position_bottom)
+        position_layout.addWidget(self.position_left)
+        position_layout.addWidget(self.position_right)
+        
+        form_layout.addRow(position_group)
         
         # Opacity setting
-        opacity_layout = QHBoxLayout()
+        opacity_group = QGroupBox("Transparency")
+        opacity_layout = QVBoxLayout(opacity_group)
+        
+        opacity_slider_layout = QHBoxLayout()
         self.opacity_slider = QSlider(Qt.Horizontal)
         self.opacity_slider.setMinimum(10)
         self.opacity_slider.setMaximum(100)
@@ -55,19 +76,27 @@ class ToolbarSettingsDialog(QDialog):
         self.opacity_slider.setTickPosition(QSlider.TicksBelow)
         self.opacity_label = QLabel("90%")
         self.opacity_slider.valueChanged.connect(self.update_opacity_label)
-        opacity_layout.addWidget(self.opacity_slider)
-        opacity_layout.addWidget(self.opacity_label)
-        form_layout.addRow("Opacity:", opacity_layout)
+        opacity_slider_layout.addWidget(self.opacity_slider)
+        opacity_slider_layout.addWidget(self.opacity_label)
         
-        # Center images setting
-        self.center_images_combo = QComboBox()
-        self.center_images_combo.addItems(["Yes", "No"])
-        form_layout.addRow("Center Images:", self.center_images_combo)
+        opacity_layout.addLayout(opacity_slider_layout)
+        opacity_layout.addWidget(QLabel("Move slider left for more transparency, right for more opacity"))
+        
+        form_layout.addRow(opacity_group)
+        
+        # Behavior settings
+        behavior_group = QGroupBox("Behavior")
+        behavior_layout = QVBoxLayout(behavior_group)
         
         # Stay on top setting
-        self.stay_on_top_combo = QComboBox()
-        self.stay_on_top_combo.addItems(["Yes", "No"])
-        form_layout.addRow("Stay on Top:", self.stay_on_top_combo)
+        self.stay_on_top_checkbox = QCheckBox("Stay on top of other windows")
+        behavior_layout.addWidget(self.stay_on_top_checkbox)
+        
+        # Center images setting
+        self.center_images_checkbox = QCheckBox("Center images in toolbar")
+        behavior_layout.addWidget(self.center_images_checkbox)
+        
+        form_layout.addRow(behavior_group)
         
         # Buttons
         buttons_layout = QHBoxLayout()
@@ -85,9 +114,14 @@ class ToolbarSettingsDialog(QDialog):
         """Load current settings from configuration."""
         # Position
         position = self.config.get('ui', 'position', 'top')
-        index = self.position_combo.findText(position)
-        if index >= 0:
-            self.position_combo.setCurrentIndex(index)
+        if position == 'top':
+            self.position_top.setChecked(True)
+        elif position == 'bottom':
+            self.position_bottom.setChecked(True)
+        elif position == 'left':
+            self.position_left.setChecked(True)
+        elif position == 'right':
+            self.position_right.setChecked(True)
         
         # Opacity
         opacity = float(self.config.get('ui', 'opacity', 0.9))
@@ -95,11 +129,11 @@ class ToolbarSettingsDialog(QDialog):
         
         # Center images
         center_images = self.config.get('ui', 'center_images', True)
-        self.center_images_combo.setCurrentIndex(0 if center_images else 1)
+        self.center_images_checkbox.setChecked(center_images)
         
         # Stay on top
         stay_on_top = self.config.get('ui', 'stay_on_top', True)
-        self.stay_on_top_combo.setCurrentIndex(0 if stay_on_top else 1)
+        self.stay_on_top_checkbox.setChecked(stay_on_top)
     
     def update_opacity_label(self, value):
         """Update the opacity label when the slider changes."""
@@ -108,7 +142,17 @@ class ToolbarSettingsDialog(QDialog):
     def save_settings(self):
         """Save settings to configuration."""
         # Position
-        position = self.position_combo.currentText()
+        if self.position_top.isChecked():
+            position = 'top'
+        elif self.position_bottom.isChecked():
+            position = 'bottom'
+        elif self.position_left.isChecked():
+            position = 'left'
+        elif self.position_right.isChecked():
+            position = 'right'
+        else:
+            position = 'top'  # Default
+        
         self.config.set('ui', 'position', position)
         
         # Opacity
@@ -116,11 +160,11 @@ class ToolbarSettingsDialog(QDialog):
         self.config.set('ui', 'opacity', opacity)
         
         # Center images
-        center_images = self.center_images_combo.currentIndex() == 0
+        center_images = self.center_images_checkbox.isChecked()
         self.config.set('ui', 'center_images', center_images)
         
         # Stay on top
-        stay_on_top = self.stay_on_top_combo.currentIndex() == 0
+        stay_on_top = self.stay_on_top_checkbox.isChecked()
         self.config.set('ui', 'stay_on_top', stay_on_top)
         
         # Accept the dialog
@@ -195,5 +239,41 @@ class ToolbarSettingsDialog(QDialog):
             }
             QSlider::handle:horizontal:hover {
                 background: #0086e8;
+            }
+            QRadioButton {
+                color: #e1e1e1;
+                spacing: 5px;
+            }
+            QRadioButton::indicator {
+                width: 13px;
+                height: 13px;
+            }
+            QRadioButton::indicator:checked {
+                background-color: #0078d4;
+                border: 2px solid #e1e1e1;
+                border-radius: 7px;
+            }
+            QRadioButton::indicator:unchecked {
+                background-color: #383838;
+                border: 2px solid #e1e1e1;
+                border-radius: 7px;
+            }
+            QCheckBox {
+                color: #e1e1e1;
+                spacing: 5px;
+            }
+            QCheckBox::indicator {
+                width: 13px;
+                height: 13px;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #0078d4;
+                border: 2px solid #e1e1e1;
+                border-radius: 3px;
+            }
+            QCheckBox::indicator:unchecked {
+                background-color: #383838;
+                border: 2px solid #e1e1e1;
+                border-radius: 3px;
             }
         """)

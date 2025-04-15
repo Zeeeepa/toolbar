@@ -89,6 +89,9 @@ except ImportError as e:
         def get_failed_plugins(self):
             return {}
         
+        def get_all_plugins(self):
+            return {}
+        
         def cleanup(self):
             pass
     
@@ -447,6 +450,7 @@ def main():
     try:
         # Initialize global variable at the beginning of the function
         global toolbar_instance
+        global plugin_manager
         toolbar_instance = None
         
         # Configure logging
