@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+"""
+Events plugin for the Toolbar application.
+
+This plugin provides a visual node-based flow editor for creating event-driven automations.
+It integrates with other plugins like GitHub and Linear to trigger events and perform actions.
+"""
+
+import os
+import sys
+import json
+import logging
+import threading
+import time
+from typing import Dict, List, Any, Optional, Type, Callable, Set, Union, Tuple
+from PyQt5.QtCore import QObject, pyqtSignal
+
+# Import plugin system
+from Toolbar.core.plugin_system import Plugin
+
+# Import event system
+from Toolbar.plugins.events.core.event_manager import EventManager
+from Toolbar.plugins.events.core.event_system import EventType
+
+# Import UI
+from Toolbar.plugins.events.ui.events_ui import EventsUI
+from Toolbar.plugins.events.ui.events_ui_integration import EventsUIIntegration
+
+# Set up logger
+logger = logging.getLogger(__name__)
+
+class EventsPlugin(Plugin):
+    """Events plugin for the Toolbar application."""
+    
+    def __init__(self):
+        """Initialize the Events plugin."""
+        self.event_manager = None
+        self.events_ui = None
+        self.events_ui_integration = None
+        self.github_events = None
+        self.linear_events = None
+    
+    def initialize(self, config):
+        """
+        Initialize the Events plugin.
+        
+        Args:
+            config: Application configuration
+            
+        Returns:
+            bool: True if initialization was successful, False otherwise
+        """
+        try:
+            # Create event manager
+            self.event_manager = EventManager(config)
+            
+            # Create events UI
+            self.events_ui = EventsUI(self.event_manager)
+            
+            # Create events UI integration
+            self.events_ui_integration = EventsUIIntegration(self.events_ui)
+            
+            # Register GitHub events
+            self.register_github_events()
+            
+            # Register Linear events
+            self.register_linear_events()
+            
+            return True
+        
+        except Exception as e:
+            logger.error(f"Error initializing Events plugin: {e}", exc_info=True)
+            return False
+    
+    def register_github_events(self):
+        """Register GitHub events."""
+        try:
+            # Import GitHub plugin
+            from Toolbar.main import get_plugin_instance
+            
+            # Get GitHub plugin
+            github_plugin = get_plugin_instance("GitHub Integration")
+            if github_plugin and hasattr(github_plugin, 'github_manager') and github_plugin.github_manager:
+                # Create GitHub events
+                from Toolbar.plugins.events.integrations.github_events import GitHubEvents
+                self.github_events = GitHubEvents(self.event_manager, github_plugin.github_manager)
+                
+                logger.info("Registered GitHub events")
+        
+        except Exception as e:
+            logger.warning(f"Error registering GitHub events: {e}")
+    
+    def register_linear_events(self):
+        """Register Linear events."""
+        try:
+            # Import Linear plugin
+            from Toolbar.main import get_plugin_instance
+            
+            # Get Linear plugin
+            linear_plugin = get_plugin_instance("Linear Integration")
+            if linear_plugin and hasattr(linear_plugin, 'linear_manager') and linear_plugin.linear_manager:
+                # Create Linear events
+                from Toolbar.plugins.events.integrations.linear_events import LinearEvents
+                self.linear_events = LinearEvents(self.event_manager, linear_plugin.linear_manager)
+                
+                logger.info("Registered Linear events")
+        
+        except Exception as e:
+            logger.warning(f"Error registering Linear events: {e}")
+    
+    def get_toolbar_button(self):
+        """
+        Get the toolbar button for the Events plugin.
+        
+        Returns:
+            QToolButton: Toolbar button
+        """
+        return self.events_ui.events_button
+    
+    def shutdown(self):
+        """Shutdown the Events plugin."""
+        try:
+            # Shutdown event manager
+            if self.event_manager:
+                self.event_manager.shutdown()
+            
+            # Shutdown GitHub events
+            if self.github_events:
+                self.github_events.shutdown()
+            
+            # Shutdown Linear events
+            if self.linear_events:
+                self.linear_events.shutdown()
+            
+            return True
+        
+        except Exception as e:
+            logger.error(f"Error shutting down Events plugin: {e}", exc_info=True)
+            return False
