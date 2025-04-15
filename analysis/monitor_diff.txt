@@ -1,0 +1,898 @@
+18,22c18,19
+< # Import from core module structure
+< from Toolbar.core.github.models import GitHubProject, GitHubNotification
+< from Toolbar.core.github.webhook_manager import WebhookManager
+< from Toolbar.core.github.ngrok_manager import NgrokManager
+< from Toolbar.core.github.webhook_handler import WebhookHandler
+---
+> # Import local models
+> from toolkit.plugins.github.github.models import GitHubProject, GitHubNotification
+27,29d23
+< # Suppress PyQt5 deprecation warnings
+< warnings.filterwarnings("ignore", message=".*sipPyTypeDict.*")
+< 
+36d29
+<     webhook_notification_received = pyqtSignal(object)  # notification
+48c41,42
+<         self.username, self.api_token = config.get_github_credentials()
+---
+>         self.token = config.get('github', 'token', '')
+>         self.username = ''
+51,52c45,47
+<         self.github_client = None
+<         if self.username and self.api_token:
+---
+>         self.github = None
+>         if self.token:
+>             self.github = Github(self.token)
+54,60c49
+<                 self.github_client = Github(self.api_token)
+<                 # Test the connection
+<                 user = self.github_client.get_user()
+<                 test_username = user.login
+<                 logger.info(f"GitHub client initialized successfully for user: {test_username}")
+<                 if test_username != self.username:
+<                     logger.warning(f"GitHub username mismatch: Config has {self.username}, but token belongs to {test_username}")
+---
+>                 self.username = self.github.get_user().login
+62,63c51
+<                 logger.error(f"Failed to initialize GitHub client: {e}")
+<                 self.github_client = None
+---
+>                 logger.error(f"Failed to get GitHub username: {e}")
+65,127c53,64
+<         # Initialize other attributes
+<         self.webhook_handler = None
+<         self.webhook_manager = None
+<         self.webhook_url = None
+<         self.ngrok_manager = None
+<         
+<         self.monitoring_thread = None
+<         self.stop_monitoring_flag = threading.Event()
+<         self.last_check_time = datetime.now() - timedelta(minutes=60)  # Start with older time to check immediately
+<         
+<         self.projects = {}  # Dictionary of GitHubProject objects keyed by full_name
+<         self.known_prs = set()
+<         self.known_branches = set()
+<         
+<         # Load pinned projects
+<         self.load_pinned_projects()
+<         
+<         # Load webhook configuration
+<         self.webhook_enabled = self.config.get('github', 'webhook_enabled', False)
+<         self.webhook_port = int(self.config.get('github', 'webhook_port', 8000))
+<         self.ngrok_auth_token = self.config.get('github', 'ngrok_auth_token', '')
+<         
+<         # Start webhook server if enabled
+<         if self.webhook_enabled:
+<             self.setup_webhook_server(self.webhook_port, self.ngrok_auth_token)
+<     
+<     def load_pinned_projects(self):
+<         """Load pinned projects from configuration."""
+<         try:
+<             pinned_projects_json = self.config.get('github', 'pinned_projects', '[]')
+<             pinned_projects = json.loads(pinned_projects_json)
+<             
+<             for project_data in pinned_projects:
+<                 project = GitHubProject(
+<                     name=project_data.get('name', ''),
+<                     full_name=project_data.get('full_name', ''),
+<                     owner=project_data.get('owner', ''),
+<                     url=project_data.get('url', ''),
+<                     icon_url=project_data.get('icon_url', None)
+<                 )
+<                 project.pinned = True
+<                 self.projects[project.full_name] = project
+<         except Exception as e:
+<             warnings.warn(f"Failed to load pinned projects: {e}")
+<     
+<     def save_projects(self):
+<         """Save pinned projects to configuration."""
+<         try:
+<             pinned_projects = []
+<             for project in self.projects.values():
+<                 if project.pinned:
+<                     pinned_projects.append({
+<                         'name': project.name,
+<                         'full_name': project.full_name,
+<                         'owner': project.owner,
+<                         'url': project.url,
+<                         'icon_url': project.icon_url
+<                     })
+<             
+<             pinned_projects_json = json.dumps(pinned_projects)
+<             self.config.set('github', 'pinned_projects', pinned_projects_json)
+<         except Exception as e:
+<             warnings.warn(f"Failed to save pinned projects: {e}")
+---
+>         # Initialize projects
+>         self.projects = []
+>         self.load_projects()
+>         
+>         # Initialize monitoring thread
+>         self.monitoring = False
+>         self.monitor_thread = None
+>         self.monitor_interval = config.get('github', 'monitor_interval', 300)  # Default: 5 minutes
+>         
+>         # Initialize notification settings
+>         self.notify_prs = config.get('github', 'notify_prs', True)
+>         self.notify_branches = config.get('github', 'notify_branches', True)
+129c66
+<     def set_credentials(self, username, token):
+---
+>     def validate_credentials(self) -> Tuple[bool, str]:
+131c68
+<         Set GitHub credentials.
+---
+>         Validate GitHub credentials.
+133,135c70,71
+<         Args:
+<             username (str): GitHub username
+<             token (str): GitHub API token
+---
+>         Returns:
+>             Tuple[bool, str]: (is_valid, username)
+137,142c73,74
+<         if not username or not token:
+<             logger.warning("Empty GitHub credentials provided, will not update")
+<             return
+<             
+<         self.username = username
+<         self.api_token = token
+---
+>         if not self.token:
+>             return False, ""
+144d75
+<         # Update the GitHub client with new credentials
+146,169c77,81
+<             # Test the credentials
+<             test_client = Github(token)
+<             user = test_client.get_user()
+<             test_username = user.login
+<             
+<             # If test successful, update the client
+<             self.github_client = test_client
+<             logger.info(f"GitHub client updated successfully for user: {test_username}")
+<             
+<             # Warning if username doesn't match
+<             if test_username != username:
+<                 logger.warning(f"GitHub username mismatch: Provided {username}, but token belongs to {test_username}")
+<                 
+<             # Stop and restart monitoring with new credentials
+<             was_monitoring = False
+<             if self.monitoring_thread is not None and not self.stop_monitoring_flag.is_set():
+<                 was_monitoring = True
+<                 self.stop_monitoring()
+<                 
+<             # Restart monitoring if it was running
+<             if was_monitoring:
+<                 self.start_monitoring()
+<                 
+<             return True
+---
+>             # Create a new GitHub client with the token
+>             github = Github(self.token)
+>             user = github.get_user()
+>             username = user.login
+>             return True, username
+171,172c83,84
+<             logger.error(f"Failed to update GitHub client with new credentials: {e}")
+<             return False
+---
+>             logger.error(f"Failed to validate GitHub credentials: {e}")
+>             return False, ""
+175,176c87,88
+<         """Start the monitoring thread."""
+<         if self.monitoring_thread is not None and self.stop_monitoring_flag.is_set():
+---
+>         """Start monitoring GitHub repositories."""
+>         if self.monitoring:
+178,182c90,94
+<             
+<         self.stop_monitoring_flag.clear()
+<         self.monitoring_thread = threading.Thread(target=self._monitor_loop)
+<         self.monitoring_thread.daemon = True
+<         self.monitoring_thread.start()
+---
+>         
+>         self.monitoring = True
+>         self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
+>         self.monitor_thread.start()
+>         logger.info("GitHub monitoring started")
+185,189c97,102
+<         """Stop the monitoring thread."""
+<         self.stop_monitoring_flag.set()
+<         if self.monitoring_thread is not None:
+<             self.monitoring_thread.join(timeout=1.0)
+<             self.monitoring_thread = None
+---
+>         """Stop monitoring GitHub repositories."""
+>         self.monitoring = False
+>         if self.monitor_thread:
+>             self.monitor_thread.join(timeout=1.0)
+>             self.monitor_thread = None
+>         logger.info("GitHub monitoring stopped")
+192,206c105,114
+<         """Main monitoring loop that runs in a separate thread."""
+<         first_run = True
+<         
+<         while not self.stop_monitoring_flag.is_set():
+<             if self.username and self.api_token:
+<                 try:
+<                     # First run just collects the current state without sending notifications
+<                     self._check_github_updates(send_notifications=not first_run)
+<                     first_run = False
+<                 except Exception as e:
+<                     warnings.warn(f"Error checking GitHub updates: {e}")
+<             
+<             # Sleep for 5 minutes, checking periodically if we should stop
+<             for _ in range(300):
+<                 if self.stop_monitoring_flag.is_set():
+---
+>         """Monitor loop that runs in a separate thread."""
+>         while self.monitoring:
+>             try:
+>                 self.check_for_updates()
+>             except Exception as e:
+>                 logger.error(f"Error in GitHub monitor loop: {e}")
+>             
+>             # Sleep for the configured interval
+>             for _ in range(self.monitor_interval):
+>                 if not self.monitoring:
+210,217c118,120
+<     def _check_github_updates(self, send_notifications=True):
+<         """
+<         Check for GitHub updates (new PRs and branches).
+<         
+<         Args:
+<             send_notifications (bool): Whether to emit notification signals
+<         """
+<         if not self.github_client:
+---
+>     def check_for_updates(self):
+>         """Check for updates in all projects."""
+>         if not self.github:
+221,243c124,126
+<             # Fetch repositories the authenticated user has access to
+<             response = requests.get(
+<                 "https://api.github.com/user/repos",
+<                 headers={
+<                     "Authorization": f"token {self.api_token}",
+<                     "Accept": "application/vnd.github.v3+json"
+<                 }
+<             )
+<             
+<             if response.status_code != 200:
+<                 if response.status_code == 401:
+<                     warnings.warn(f"GitHub authentication failed (401 Unauthorized). Please check your token in the settings or .env file.")
+<                     # Show a more helpful warning to guide the user
+<                     print("\nℹ️ GitHub Authentication Error")
+<                     print("Please check your GitHub credentials:")
+<                     print("1. Click on the GitHub icon in the toolbar to update your credentials")
+<                     print("2. Or run the configuration script: python -m Toolbar.scripts.configure_github")
+<                     print("3. Or add your credentials to the .env file:\n   GITHUB_USERNAME=your_username\n   GITHUB_TOKEN=your_personal_access_token\n")
+<                 else:
+<                     warnings.warn(f"Failed to get repositories: {response.status_code}")
+<                 return
+<             
+<             repos = response.json()
+---
+>             # Get user repositories
+>             user = self.github.get_user()
+>             repos = user.get_repos()
+244a128
+>             # Check each repository for updates
+246,340c130,143
+<                 repo_name = repo["name"]
+<                 repo_full_name = repo["full_name"]
+<                 
+<                 # Create or update project
+<                 if repo_full_name not in self.projects:
+<                     self.projects[repo_full_name] = GitHubProject(
+<                         name=repo_name,
+<                         full_name=repo_full_name,
+<                         owner=repo["owner"]["login"],
+<                         url=repo["html_url"],
+<                         icon_url=repo["owner"].get("avatar_url")
+<                     )
+<                 
+<                 # Check for PRs
+<                 pr_url = f"https://api.github.com/repos/{repo_full_name}/pulls"
+<                 pr_response = requests.get(pr_url, headers={"Authorization": f"token {self.api_token}", "Accept": "application/vnd.github.v3+json"})
+<                 if pr_response.status_code == 200:
+<                     prs = pr_response.json()
+<                     for pr in prs:
+<                         pr_id = f"{repo_full_name}#{pr['number']}"
+<                         
+<                         # Check if this is a new PR
+<                         if pr_id not in self.known_prs:
+<                             self.known_prs.add(pr_id)
+<                             
+<                             # Only send notification if not first run
+<                             if send_notifications:
+<                                 created_at = datetime.strptime(pr["created_at"], "%Y-%m-%dT%H:%M:%SZ")
+<                                 
+<                                 # Only notify for PRs created after our last check
+<                                 if created_at > self.last_check_time:
+<                                     notification = GitHubNotification(
+<                                         f"New PR in {repo_name}: {pr['title']}",
+<                                         pr["html_url"],
+<                                         created_at,
+<                                         "pr",
+<                                         repo_name,
+<                                         pr
+<                                     )
+<                                     
+<                                     # Emit signals
+<                                     self.notification_received.emit(notification)
+<                                     self.project_notification_received.emit(self.projects[repo_full_name], notification)
+<                                     self.projects[repo_full_name].add_notification(notification)
+<                 
+<                 # Check for branches
+<                 branch_url = f"https://api.github.com/repos/{repo_full_name}/branches"
+<                 branch_response = requests.get(branch_url, headers={"Authorization": f"token {self.api_token}", "Accept": "application/vnd.github.v3+json"})
+<                 if branch_response.status_code == 200:
+<                     branches = branch_response.json()
+<                     for branch in branches:
+<                         branch_id = f"{repo_full_name}/{branch['name']}"
+<                         
+<                         # Check if this is a new branch
+<                         if branch_id not in self.known_branches:
+<                             self.known_branches.add(branch_id)
+<                             
+<                             # Only send notification if not first run
+<                             if send_notifications:
+<                                 # Get the most recent commit to determine when the branch was created
+<                                 commit_url = f"https://api.github.com/repos/{repo_full_name}/commits/{branch['commit']['sha']}"
+<                                 commit_response = requests.get(commit_url, headers={"Authorization": f"token {self.api_token}", "Accept": "application/vnd.github.v3+json"})
+<                                 
+<                                 if commit_response.status_code == 200:
+<                                     commit = commit_response.json()
+<                                     created_at = datetime.strptime(commit["commit"]["committer"]["date"], "%Y-%m-%dT%H:%M:%SZ")
+<                                     
+<                                     # Only notify for branches created after our last check
+<                                     if created_at > self.last_check_time:
+<                                         notification = GitHubNotification(
+<                                             f"New branch in {repo_name}: {branch['name']}",
+<                                             f"https://github.com/{repo_full_name}/tree/{branch['name']}",
+<                                             created_at,
+<                                             "branch",
+<                                             repo_name,
+<                                             branch
+<                                         )
+<                                         
+<                                         # Emit signals
+<                                         self.notification_received.emit(notification)
+<                                         self.project_notification_received.emit(self.projects[repo_full_name], notification)
+<                                         self.projects[repo_full_name].add_notification(notification)
+<             
+<             # Update last check time
+<             self.last_check_time = datetime.now()
+<         except Exception as e:
+<             warnings.warn(f"Error checking GitHub updates: {e}")
+<     
+<     def setup_webhook_server(self, port=8000, ngrok_auth_token=None):
+<         """
+<         Set up webhook server.
+<         
+<         Args:
+<             port (int): Port to run the webhook server on
+<             ngrok_auth_token (str, optional): Ngrok authentication token
+---
+>                 # Skip forks if configured to do so
+>                 if repo.fork and not self.config.get('github', 'include_forks', False):
+>                     continue
+>                 
+>                 # Get or create project
+>                 project = self.get_project(repo.name, repo.full_name, repo.owner.login, repo.html_url)
+>                 
+>                 # Check for new pull requests
+>                 if self.notify_prs:
+>                     self._check_pull_requests(project, repo)
+>                 
+>                 # Check for new branches
+>                 if self.notify_branches:
+>                     self._check_branches(project, repo)
+342,381d144
+<         Returns:
+<             bool: True if successful, False otherwise
+<         """
+<         try:
+<             # Initialize webhook handler
+<             self.webhook_handler = WebhookHandler(port)
+<             
+<             # Set up event handlers
+<             self.webhook_handler.on_pull_request = self._handle_pull_request_event
+<             self.webhook_handler.on_push = self._handle_push_event
+<             self.webhook_handler.on_create = self._handle_create_event
+<             self.webhook_handler.on_repository = self._handle_repository_event
+<             
+<             # Start webhook server
+<             if not self.webhook_handler.start_server():
+<                 warnings.warn("Failed to start webhook server")
+<                 return False
+<             
+<             # Set up ngrok tunnel if auth token provided
+<             if ngrok_auth_token:
+<                 self.ngrok_manager = NgrokManager(ngrok_auth_token)
+<                 self.webhook_url = self.ngrok_manager.start_tunnel(port)
+<                 
+<                 if not self.webhook_url:
+<                     warnings.warn("Failed to start ngrok tunnel")
+<                     self.webhook_handler.stop_server()
+<                     return False
+<             else:
+<                 self.webhook_url = f"http://localhost:{port}/webhook"
+<             
+<             # Initialize webhook manager
+<             self.webhook_manager = WebhookManager(self.api_token, self.webhook_url)
+<             
+<             # Save webhook configuration
+<             self.config.set('github', 'webhook_enabled', True)
+<             self.config.set('github', 'webhook_port', port)
+<             if ngrok_auth_token:
+<                 self.config.set('github', 'ngrok_auth_token', ngrok_auth_token)
+<             
+<             return True
+383,429c146
+<             warnings.warn(f"Failed to set up webhook server: {e}")
+<             return False
+<     
+<     def setup_webhooks(self):
+<         """
+<         Set up webhooks for all repositories.
+<         
+<         Returns:
+<             bool: True if successful, False otherwise
+<         """
+<         if not self.webhook_manager or not self.webhook_url:
+<             warnings.warn("Webhook manager or URL not initialized")
+<             return False
+<         
+<         success = True
+<         
+<         # Set up webhooks for all repositories
+<         for repo_full_name in self.projects:
+<             if not self.webhook_manager.setup_webhook(repo_full_name):
+<                 warnings.warn(f"Failed to set up webhook for {repo_full_name}")
+<                 success = False
+<         
+<         return success
+<     
+<     def stop_webhook_server(self):
+<         """
+<         Stop webhook server.
+<         
+<         Returns:
+<             bool: True if successful, False otherwise
+<         """
+<         success = True
+<         
+<         # Stop webhook handler
+<         if self.webhook_handler:
+<             if not self.webhook_handler.stop_server():
+<                 success = False
+<         
+<         # Stop ngrok tunnel
+<         if self.ngrok_manager:
+<             if not self.ngrok_manager.stop_tunnel():
+<                 success = False
+<         
+<         # Save webhook configuration
+<         self.config.set('github', 'webhook_enabled', False)
+<         
+<         return success
+---
+>             logger.error(f"Error checking for updates: {e}")
+431c148
+<     def _handle_pull_request_event(self, payload: Dict[str, Any]):
+---
+>     def _check_pull_requests(self, project, repo):
+433c150
+<         Handle pull request webhook event.
+---
+>         Check for new pull requests in a repository.
+436c153,154
+<             payload: Event payload
+---
+>             project (GitHubProject): The project to check
+>             repo: The GitHub repository object
+439,459c157,158
+<             action = payload.get('action')
+<             pr = payload.get('pull_request', {})
+<             repo = payload.get('repository', {})
+<             
+<             # Skip if missing essential data
+<             if not action or not pr or not repo:
+<                 return
+<             
+<             # Get repo details
+<             repo_name = repo.get('name', '')
+<             repo_full_name = repo.get('full_name', '')
+<             
+<             # Ensure project exists
+<             if repo_full_name not in self.projects:
+<                 self.projects[repo_full_name] = GitHubProject(
+<                     name=repo_name,
+<                     full_name=repo_full_name,
+<                     owner=repo.get('owner', {}).get('login', ''),
+<                     url=repo.get('html_url', ''),
+<                     icon_url=repo.get('owner', {}).get('avatar_url')
+<                 )
+---
+>             # Get open pull requests
+>             pulls = repo.get_pulls(state='open')
+461,464c160,164
+<             # Create notification for opened, reopened, or synchronized PR
+<             if action in ('opened', 'reopened', 'synchronize'):
+<                 pr_id = f"{repo_full_name}#{pr.get('number')}"
+<                 created_at = datetime.strptime(pr.get('created_at', ''), "%Y-%m-%dT%H:%M:%SZ")
+---
+>             # Check each pull request
+>             for pull in pulls:
+>                 # Skip if already notified
+>                 if any(n.url == pull.html_url for n in project.notifications):
+>                     continue
+465a166
+>                 # Create notification
+467,472c168,172
+<                     f"PR {action} in {repo_name}: {pr.get('title', '')}",
+<                     pr.get('html_url', ''),
+<                     created_at,
+<                     "pr",
+<                     repo_name,
+<                     payload
+---
+>                     title=f"New PR: {pull.title}",
+>                     url=pull.html_url,
+>                     created_at=pull.created_at,
+>                     type_str="pr",
+>                     repo_name=project.full_name
+474a175,177
+>                 # Add to project
+>                 project.add_notification(notification)
+>                 
+476d178
+<                 self.webhook_notification_received.emit(notification)
+478,479c180
+<                 self.project_notification_received.emit(self.projects[repo_full_name], notification)
+<                 self.projects[repo_full_name].add_notification(notification)
+---
+>                 self.project_notification_received.emit(project, notification)
+481,482c182,183
+<                 # Add to known PRs
+<                 self.known_prs.add(pr_id)
+---
+>                 logger.info(f"New PR notification: {notification.title}")
+>         
+484c185
+<             warnings.warn(f"Error handling pull request event: {e}")
+---
+>             logger.error(f"Error checking pull requests for {project.full_name}: {e}")
+486c187
+<     def _handle_push_event(self, payload: Dict[str, Any]):
+---
+>     def _check_branches(self, project, repo):
+488c189
+<         Handle push webhook event.
+---
+>         Check for new branches in a repository.
+491c192,193
+<             payload: Event payload
+---
+>             project (GitHubProject): The project to check
+>             repo: The GitHub repository object
+494,512c196,197
+<             repo = payload.get('repository', {})
+<             
+<             # Skip if missing essential data
+<             if not repo:
+<                 return
+<             
+<             # Get repo details
+<             repo_name = repo.get('name', '')
+<             repo_full_name = repo.get('full_name', '')
+<             
+<             # Ensure project exists
+<             if repo_full_name not in self.projects:
+<                 self.projects[repo_full_name] = GitHubProject(
+<                     name=repo_name,
+<                     full_name=repo_full_name,
+<                     owner=repo.get('owner', {}).get('login', ''),
+<                     url=repo.get('html_url', ''),
+<                     icon_url=repo.get('owner', {}).get('avatar_url')
+<                 )
+---
+>             # Get branches
+>             branches = repo.get_branches()
+514,528c199,213
+<             # Extract push details
+<             ref = payload.get('ref', '')
+<             branch_name = ref.replace('refs/heads/', '')
+<             pusher = payload.get('pusher', {}).get('name', 'Unknown')
+<             
+<             # Create notification for push
+<             commits = payload.get('commits', [])
+<             commit_count = len(commits)
+<             
+<             if commit_count > 0:
+<                 created_at = datetime.now()
+<                 
+<                 # Use the most recent commit timestamp if available
+<                 if commits and 'timestamp' in commits[0]:
+<                     created_at = datetime.strptime(commits[0]['timestamp'], "%Y-%m-%dT%H:%M:%SZ")
+---
+>             # Get known branch names
+>             known_branches = set()
+>             for notification in project.notifications:
+>                 if notification.type == "branch" and notification.payload:
+>                     known_branches.add(notification.payload.get("name", ""))
+>             
+>             # Check each branch
+>             for branch in branches:
+>                 # Skip if already notified
+>                 if branch.name in known_branches:
+>                     continue
+>                 
+>                 # Skip default branch
+>                 if branch.name == repo.default_branch:
+>                     continue
+529a215
+>                 # Create notification
+531,536c217,222
+<                     f"Push to {repo_name}/{branch_name}: {commit_count} commit(s) by {pusher}",
+<                     f"https://github.com/{repo_full_name}/commits/{branch_name}",
+<                     created_at,
+<                     "push",
+<                     repo_name,
+<                     payload
+---
+>                     title=f"New branch: {branch.name}",
+>                     url=f"{repo.html_url}/tree/{branch.name}",
+>                     created_at=datetime.now(),
+>                     type_str="branch",
+>                     repo_name=project.full_name,
+>                     payload={"name": branch.name}
+538a225,227
+>                 # Add to project
+>                 project.add_notification(notification)
+>                 
+540d228
+<                 self.webhook_notification_received.emit(notification)
+542,543c230,236
+<                 self.project_notification_received.emit(self.projects[repo_full_name], notification)
+<                 self.projects[repo_full_name].add_notification(notification)
+---
+>                 self.project_notification_received.emit(project, notification)
+>                 
+>                 logger.info(f"New branch notification: {notification.title}")
+>                 
+>                 # Add to known branches
+>                 known_branches.add(branch.name)
+>         
+545c238
+<             warnings.warn(f"Error handling push event: {e}")
+---
+>             logger.error(f"Error checking branches for {project.full_name}: {e}")
+547c240
+<     def _handle_create_event(self, payload: Dict[str, Any]):
+---
+>     def get_project(self, name, full_name, owner, url):
+549c242
+<         Handle create webhook event (branch or tag creation).
+---
+>         Get or create a project.
+552c245,251
+<             payload: Event payload
+---
+>             name (str): Project name
+>             full_name (str): Full repository name (owner/repo)
+>             owner (str): Repository owner
+>             url (str): Repository URL
+>         
+>         Returns:
+>             GitHubProject: The project
+553a253,273
+>         # Check if project already exists
+>         for project in self.projects:
+>             if project.full_name == full_name:
+>                 return project
+>         
+>         # Create new project
+>         project = GitHubProject(name, full_name, owner, url)
+>         self.projects.append(project)
+>         
+>         return project
+>     
+>     def get_user_repositories(self):
+>         """
+>         Get repositories for the authenticated user.
+>         
+>         Returns:
+>             List[GitHubProject]: List of projects
+>         """
+>         if not self.github:
+>             return []
+>         
+555,575c275,277
+<             ref_type = payload.get('ref_type')
+<             ref = payload.get('ref')
+<             repo = payload.get('repository', {})
+<             
+<             # Skip if missing essential data
+<             if not ref_type or not ref or not repo:
+<                 return
+<             
+<             # Get repo details
+<             repo_name = repo.get('name', '')
+<             repo_full_name = repo.get('full_name', '')
+<             
+<             # Ensure project exists
+<             if repo_full_name not in self.projects:
+<                 self.projects[repo_full_name] = GitHubProject(
+<                     name=repo_name,
+<                     full_name=repo_full_name,
+<                     owner=repo.get('owner', {}).get('login', ''),
+<                     url=repo.get('html_url', ''),
+<                     icon_url=repo.get('owner', {}).get('avatar_url')
+<                 )
+---
+>             # Get user repositories
+>             user = self.github.get_user()
+>             repos = user.get_repos()
+577,595c279,284
+<             # Handle branch creation
+<             if ref_type == 'branch':
+<                 branch_id = f"{repo_full_name}/{ref}"
+<                 created_at = datetime.now()
+<                 
+<                 notification = GitHubNotification(
+<                     f"New branch in {repo_name}: {ref}",
+<                     f"https://github.com/{repo_full_name}/tree/{ref}",
+<                     created_at,
+<                     "branch",
+<                     repo_name,
+<                     payload
+<                 )
+<                 
+<                 # Emit signals
+<                 self.webhook_notification_received.emit(notification)
+<                 self.notification_received.emit(notification)
+<                 self.project_notification_received.emit(self.projects[repo_full_name], notification)
+<                 self.projects[repo_full_name].add_notification(notification)
+---
+>             # Convert to projects
+>             projects = []
+>             for repo in repos:
+>                 # Skip forks if configured to do so
+>                 if repo.fork and not self.config.get('github', 'include_forks', False):
+>                     continue
+597,598c286,287
+<                 # Add to known branches
+<                 self.known_branches.add(branch_id)
+---
+>                 project = self.get_project(repo.name, repo.full_name, repo.owner.login, repo.html_url)
+>                 projects.append(project)
+600,617c289,290
+<             # Handle tag creation
+<             elif ref_type == 'tag':
+<                 created_at = datetime.now()
+<                 
+<                 notification = GitHubNotification(
+<                     f"New tag in {repo_name}: {ref}",
+<                     f"https://github.com/{repo_full_name}/releases/tag/{ref}",
+<                     created_at,
+<                     "tag",
+<                     repo_name,
+<                     payload
+<                 )
+<                 
+<                 # Emit signals
+<                 self.webhook_notification_received.emit(notification)
+<                 self.notification_received.emit(notification)
+<                 self.project_notification_received.emit(self.projects[repo_full_name], notification)
+<                 self.projects[repo_full_name].add_notification(notification)
+---
+>             return projects
+>         
+619c292,293
+<             warnings.warn(f"Error handling create event: {e}")
+---
+>             logger.error(f"Error getting user repositories: {e}")
+>             return []
+621c295
+<     def _handle_repository_event(self, payload: Dict[str, Any]):
+---
+>     def pin_project(self, project, pinned=True):
+623c297
+<         Handle repository webhook event.
+---
+>         Pin or unpin a project.
+626c300,301
+<             payload: Event payload
+---
+>             project (GitHubProject): The project to pin/unpin
+>             pinned (bool, optional): Whether to pin or unpin the project
+627a303,307
+>         project.pinned = pinned
+>         self.save_projects()
+>     
+>     def load_projects(self):
+>         """Load projects from configuration."""
+629,630c309,310
+<             action = payload.get('action')
+<             repo = payload.get('repository', {})
+---
+>             projects_json = self.config.get('github', 'projects', '[]')
+>             projects_data = json.loads(projects_json)
+632,667c312,333
+<             # Skip if missing essential data
+<             if not action or not repo:
+<                 return
+<             
+<             # Handle repo creation
+<             if action == 'created':
+<                 repo_name = repo.get('name', '')
+<                 repo_full_name = repo.get('full_name', '')
+<                 
+<                 # Create project entry
+<                 self.projects[repo_full_name] = GitHubProject(
+<                     name=repo_name,
+<                     full_name=repo_full_name,
+<                     owner=repo.get('owner', {}).get('login', ''),
+<                     url=repo.get('html_url', ''),
+<                     icon_url=repo.get('owner', {}).get('avatar_url')
+<                 )
+<                 
+<                 created_at = datetime.now()
+<                 
+<                 notification = GitHubNotification(
+<                     f"New repository created: {repo_name}",
+<                     repo.get('html_url', ''),
+<                     created_at,
+<                     "repository",
+<                     repo_name,
+<                     payload
+<                 )
+<                 
+<                 # Emit signals
+<                 self.webhook_notification_received.emit(notification)
+<                 self.notification_received.emit(notification)
+<                 
+<                 # Set up webhook for the new repository
+<                 if self.webhook_manager:
+<                     self.webhook_manager.handle_repository_created(repo_full_name)
+---
+>             self.projects = []
+>             for project_data in projects_data:
+>                 project = GitHubProject.from_dict(project_data)
+>                 self.projects.append(project)
+>             
+>             logger.info(f"Loaded {len(self.projects)} projects from configuration")
+>         
+>         except Exception as e:
+>             logger.error(f"Error loading projects: {e}")
+>             self.projects = []
+>     
+>     def save_projects(self):
+>         """Save projects to configuration."""
+>         try:
+>             projects_data = [project.to_dict() for project in self.projects]
+>             projects_json = json.dumps(projects_data)
+>             
+>             self.config.set('github', 'projects', projects_json)
+>             self.config.save()
+>             
+>             logger.info(f"Saved {len(self.projects)} projects to configuration")
+>         
+669c335,342
+<             warnings.warn(f"Error handling repository event: {e}")
+---
+>             logger.error(f"Error saving projects: {e}")
+>     
+>     def clear_all_notifications(self):
+>         """Clear all notifications for all projects."""
+>         for project in self.projects:
+>             project.clear_notifications()
+>         
+>         self.save_projects()
