@@ -21,6 +21,9 @@ from Toolbar.core.github.webhook_manager import WebhookManager
 from Toolbar.core.github.ngrok_manager import NgrokManager
 from Toolbar.core.github.webhook_handler import WebhookHandler
 
+# Import PR handler
+from Toolbar.plugins.github.github.pr_handler import PRHandler
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -68,6 +71,9 @@ class GitHubMonitor(QObject):
         self.webhook_url = None
         self.ngrok_manager = None
         
+        # Initialize PR handler
+        self.pr_handler = PRHandler(self)
+        
         self.monitoring_thread = None
         self.stop_monitoring_flag = threading.Event()
         self.last_check_time = datetime.now() - timedelta(minutes=60)  # Start with older time to check immediately
@@ -88,6 +94,41 @@ class GitHubMonitor(QObject):
         if self.webhook_enabled:
             self.setup_webhook_server(self.webhook_port, self.ngrok_auth_token)
     
+    def get_setting(self, key, default=None):
+        """
+        Get a setting from the configuration.
+        
+        Args:
+            key: Setting key
+            default: Default value if setting is not found
+            
+        Returns:
+            Setting value or default
+        """
+        try:
+            return self.config.get('github', key, default)
+        except Exception as e:
+            logger.error(f"Error getting setting {key}: {e}")
+            return default
+            
+    def set_setting(self, key, value):
+        """
+        Set a setting in the configuration.
+        
+        Args:
+            key: Setting key
+            value: Setting value
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            self.config.set('github', key, value)
+            return True
+        except Exception as e:
+            logger.error(f"Error setting {key} to {value}: {e}")
+            return False
+
     def load_pinned_projects(self):
         """Load pinned projects from configuration."""
         try:
@@ -480,6 +521,10 @@ class GitHubMonitor(QObject):
                 
                 # Add to known PRs
                 self.known_prs.add(pr_id)
+                
+                # Check if PR should be auto-merged
+                if self.get_setting("auto_merge_md_prompt", False):
+                    self.pr_handler.handle_pull_request_event(payload)
         except Exception as e:
             warnings.warn(f"Error handling pull request event: {e}")
     
