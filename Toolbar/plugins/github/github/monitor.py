@@ -10,7 +10,7 @@ from PyQt5.QtCore import QObject, pyqtSignal
 from github import Github
 from typing import List, Dict, Optional, Any, Tuple
 
-# Import from new module structure
+# Import from core module structure
 from Toolbar.core.github.models import GitHubProject, GitHubNotification
 from Toolbar.core.github.webhook_manager import WebhookManager
 from Toolbar.core.github.ngrok_manager import NgrokManager
@@ -82,7 +82,7 @@ class GitHubMonitor(QObject):
         # Start webhook server if enabled
         if self.webhook_enabled:
             self.setup_webhook_server(self.webhook_port, self.ngrok_auth_token)
-        
+    
     def load_pinned_projects(self):
         """Load pinned projects from configuration."""
         try:
@@ -101,7 +101,7 @@ class GitHubMonitor(QObject):
                 self.projects[project.full_name] = project
         except Exception as e:
             warnings.warn(f"Failed to load pinned projects: {e}")
-        
+    
     def set_credentials(self, username, token):
         """
         Set GitHub credentials.
@@ -146,7 +146,7 @@ class GitHubMonitor(QObject):
         except Exception as e:
             logger.error(f"Failed to update GitHub client with new credentials: {e}")
             return False
-        
+    
     def start_monitoring(self):
         """Start the monitoring thread."""
         if self.monitoring_thread is not None and self.stop_monitoring_flag.is_set():
@@ -156,7 +156,7 @@ class GitHubMonitor(QObject):
         self.monitoring_thread = threading.Thread(target=self._monitor_loop)
         self.monitoring_thread.daemon = True
         self.monitoring_thread.start()
-        
+    
     def stop_monitoring(self):
         """Stop the monitoring thread."""
         self.stop_monitoring_flag.set()
@@ -293,10 +293,10 @@ class GitHubMonitor(QObject):
             self.last_check_time = datetime.now()
         except Exception as e:
             warnings.warn(f"Error checking GitHub updates: {e}")
-        
+    
     def get_projects(self):
         """Get all GitHub projects."""
-        return self.projects.values()
+        return list(self.projects.values())
     
     def save_projects(self):
         """
@@ -304,7 +304,7 @@ class GitHubMonitor(QObject):
         This method saves the pinned state of projects to the configuration.
         """
         try:
-            # Create a list of pinned project data
+            # Get pinned projects
             pinned_projects = []
             for project in self.projects.values():
                 if project.pinned:
@@ -318,9 +318,9 @@ class GitHubMonitor(QObject):
             
             # Save to configuration
             self.config.set('github', 'pinned_projects', json.dumps(pinned_projects))
+            logger.info(f"Saved {len(pinned_projects)} pinned projects")
         except Exception as e:
-            warnings.warn(f"Failed to save pinned projects: {e}")
-            # Continue execution even if saving fails
+            logger.error(f"Failed to save pinned projects: {e}")
     
     def setup_webhook_server(self, port: int, ngrok_auth_token: Optional[str] = None) -> Optional[str]:
         """
@@ -402,10 +402,6 @@ class GitHubMonitor(QObject):
         
         return success
     
-    # Webhook event handler methods would be included here.
-    # These include _handle_pull_request_event, _handle_push_event, etc.
-    # I've omitted them for brevity but they would be copied over from github_enhanced.py
-
     def _handle_pull_request_event(self, payload: Dict[str, Any]):
         """
         Handle pull request webhook event.
@@ -644,4 +640,4 @@ class GitHubMonitor(QObject):
                 if self.webhook_manager:
                     self.webhook_manager.handle_repository_created(repo_full_name)
         except Exception as e:
-            warnings.warn(f"Error handling repository event: {e}") 
+            warnings.warn(f"Error handling repository event: {e}")
