@@ -437,3 +437,17 @@ class LinearIntegration(QObject):
                 return template
         
         return None
+        
+    def cleanup(self):
+        """
+        Clean up resources used by the Linear integration.
+        This method is called when the plugin is being unloaded.
+        """
+        # Save any pending settings
+        try:
+            self.save_settings()
+        except Exception as e:
+            warnings.warn(f"Failed to save Linear settings during cleanup: {str(e)}")
+            
+        # Close any open connections or resources
+        # Currently, there are no persistent connections to close
