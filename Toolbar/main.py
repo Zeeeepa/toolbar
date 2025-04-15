@@ -26,7 +26,7 @@ from PyQt5.QtWidgets import QApplication, QMessageBox, QSplashScreen
 # Import custom modules
 from Toolbar.core.config import Config, get_config_instance
 from Toolbar.core.plugin_system import PluginManager
-from Toolbar.ui.script_toolbar_ui import ScriptToolbar
+from Toolbar.plugins.automationmanager.ui.script_toolbar_ui import ScriptToolbar
 
 # Set up logging
 logging.basicConfig(
