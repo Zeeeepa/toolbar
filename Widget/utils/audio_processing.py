@@ -1,20 +1,82 @@
 from enum import Enum
-from typing import Optional, Union
+from typing import Optional, Union, Tuple
+import numpy as np
+from scipy import signal
 from .logger import logger
 
 class AudioFormat(Enum):
     """Supported audio formats"""
     RAW = "raw"
     WEBM = "webm"
+    WAV = "wav"
+    MP3 = "mp3"
 
 class AudioProcessor:
     """Audio processing utility class"""
     def __init__(self):
         self.sample_rate = 44100
-        self.channels = 2
+        self.channels = 1  # Default to mono for speech
         self.bit_depth = 16
+        self.noise_reduction_enabled = True
+        self.noise_reduction_strength = 0.1
     
-    async def extract_audio_blob(self, video: bytes, range: Optional[tuple[float, float]] = None) -> bytes:
+    def process_audio(self, audio_data: bytes, format: AudioFormat) -> bytes:
+        """Process audio data with noise reduction and normalization"""
+        try:
+            # Convert bytes to numpy array
+            data = np.frombuffer(audio_data, dtype=np.int16)
+            
+            # Apply noise reduction if enabled
+            if self.noise_reduction_enabled:
+                data = self._reduce_noise(data)
+            
+            # Normalize audio
+            data = self._normalize_audio(data)
+            
+            # Convert back to bytes
+            return data.tobytes()
+        except Exception as e:
+            logger.error(f"Error processing audio: {str(e)}")
+            return audio_data
+    
+    def _reduce_noise(self, data: np.ndarray) -> np.ndarray:
+        """Apply noise reduction to audio data"""
+        try:
+            # Convert to float32 for processing
+            data = data.astype(np.float32) / 32768.0
+            
+            # Estimate noise profile from first 1000 samples
+            noise_profile = np.mean(np.abs(data[:1000]))
+            
+            # Apply simple noise gate
+            data[np.abs(data) < noise_profile * self.noise_reduction_strength] = 0
+            
+            # Convert back to int16
+            return (data * 32768.0).astype(np.int16)
+        except Exception as e:
+            logger.error(f"Error reducing noise: {str(e)}")
+            return data
+    
+    def _normalize_audio(self, data: np.ndarray) -> np.ndarray:
+        """Normalize audio to use full dynamic range"""
+        try:
+            # Convert to float32 for processing
+            data = data.astype(np.float32)
+            
+            # Find max amplitude
+            max_val = np.max(np.abs(data))
+            
+            if max_val > 0:
+                # Scale to use full range
+                data = data * (32767.0 / max_val)
+            
+            # Convert back to int16
+            return data.astype(np.int16)
+        except Exception as e:
+            logger.error(f"Error normalizing audio: {str(e)}")
+            return data
+    
+    async def extract_audio_blob(self, video: bytes, range: Optional[Tuple[float, float]] = None) -> bytes:
         """Extract audio from video blob"""
         try:
             buffer = video
@@ -29,7 +91,7 @@ class AudioProcessor:
             logger.error(f"Error extracting audio: {str(e)}")
             raise
     
-    def _slice_audio_buffer(self, audio_buffer, range: tuple[float, float]) -> bytes:
+    def _slice_audio_buffer(self, audio_buffer, range: Tuple[float, float]) -> bytes:
         """Slice audio buffer to specified range"""
         try:
             start, end = range
