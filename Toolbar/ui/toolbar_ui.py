@@ -37,26 +37,50 @@ class ToolbarUI(QMainWindow):
         
         # Store the original size before going fullwidth
         self.original_width = 800
-        self.original_height = 152
+        self.original_height = 40  # Reduced height to match taskbar
         
         # Initialize UI
         self._init_ui()
         
     def _init_ui(self):
         """Initialize the UI components."""
-        # Set window flags
+        # Set window flags for taskbar-like behavior
         self.setWindowFlags(
-            Qt.WindowStaysOnTopHint |  # Always on top
-            Qt.FramelessWindowHint |   # No window frame
-            Qt.Tool                    # No taskbar icon
+            Qt.WindowStaysOnTopHint |    # Always on top
+            Qt.FramelessWindowHint |     # No window frame
+            Qt.WindowDoesNotAcceptFocus  # Don't take focus
         )
+        
+        # Set window attributes
+        self.setAttribute(Qt.WA_TranslucentBackground)  # Enable transparency
+        self.setAttribute(Qt.WA_ShowWithoutActivating) # Show without focus
 
         # Create central widget and layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         
+        # Set widget style
+        central_widget.setStyleSheet("""
+            QWidget {
+                background-color: #2D2D2D;
+                border: none;
+            }
+            QPushButton {
+                background-color: transparent;
+                color: #FFFFFF;
+                border: none;
+                padding: 5px 10px;
+                min-width: 80px;
+            }
+            QPushButton:hover {
+                background-color: #3D3D3D;
+            }
+        """)
+        
         # Create horizontal layout
         layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(1)
         central_widget.setLayout(layout)
         
         # Add settings button
@@ -68,6 +92,9 @@ class ToolbarUI(QMainWindow):
         plugins_btn = QPushButton("Plugins")
         plugins_btn.clicked.connect(self.show_plugin_manager)
         layout.addWidget(plugins_btn)
+        
+        # Add stretch to push buttons to the left
+        layout.addStretch()
         
         # Load plugin buttons
         self._load_plugins(layout)
@@ -87,7 +114,6 @@ class ToolbarUI(QMainWindow):
 
     def _position_toolbar(self):
         """Position the toolbar on the screen."""
-        
         # Get screen geometry
         screen = QDesktopWidget().screenGeometry()
         
@@ -106,6 +132,11 @@ class ToolbarUI(QMainWindow):
         """Create the system tray icon and menu."""
         # Create tray icon
         self.tray_icon = QSystemTrayIcon(self)
+        
+        # Set default icon
+        icon_path = os.path.join(os.path.dirname(__file__), "icons", "tray.png")
+        if os.path.exists(icon_path):
+            self.tray_icon.setIcon(QIcon(icon_path))
         
         # Create tray menu
         tray_menu = QMenu()
@@ -143,7 +174,7 @@ class ToolbarUI(QMainWindow):
                 logger.info(f"Added button for plugin: {plugin_id}")
             except Exception as e:
                 logger.error(f"Error creating button for plugin {plugin_id}: {str(e)}")
-                logger.error(f"Traceback:", exc_info=True)
+                logger.error("Traceback:", exc_info=True)
                 
         logger.info(f"Loaded {button_count} plugin buttons")
 
@@ -170,7 +201,9 @@ class ToolbarUI(QMainWindow):
         """Reload all plugin buttons."""
         # Remove existing buttons
         for i in reversed(range(self.centralWidget().layout().count())):
-            self.centralWidget().layout().itemAt(i).widget().setParent(None)
+            widget = self.centralWidget().layout().itemAt(i).widget()
+            if widget:
+                widget.setParent(None)
             
         # Reload buttons
         self._load_plugins(self.centralWidget().layout())
