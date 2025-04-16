@@ -291,509 +291,99 @@ class ScriptingPlugin(EnhancedPlugin):
         """Delete a script."""
         return False
 
-class EnhancedPluginManager(BasePluginManager):
-    """Enhanced plugin manager with additional functionality."""
+class EnhancedPluginManager(QObject):
+    """Enhanced plugin manager with proper initialization and lifecycle management."""
     
-    def __init__(self, config):
-        """Initialize the plugin manager."""
-        super().__init__(config)
-        self.plugin_locations = []
-        self.plugin_zip_cache = {}
-        self.plugin_update_checker = None
-        self.auto_discovery_enabled = True
-        
-        # Load plugin locations from config
-        self._load_plugin_locations()
-        
-        # Start plugin update checker
-        self._start_update_checker()
-    
-    def _load_plugin_locations(self):
-        """Load plugin locations from configuration."""
-        locations = self.config.get_setting("plugins.locations", [])
-        
-        # Convert to PluginLocation objects
-        for location_data in locations:
-            try:
-                location = PluginLocation.from_dict(location_data)
-                self.add_plugin_location(location)
-            except Exception as e:
-                logger.error(f"Error loading plugin location: {e}", exc_info=True)
-        
-        # Add default locations if none are configured
-        if not self.plugin_locations:
-            # Add the built-in plugins directory
-            builtin_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "plugins")
-            self.add_plugin_location(PluginLocation(
-                id="builtin",
-                name="Built-in Plugins",
-                path=builtin_dir,
-                enabled=True,
-                auto_discover=True,
-                priority=100
-            ))
-            
-            # Add user plugins directory
-            user_dir = os.path.expanduser("~/.toolbar/plugins")
-            os.makedirs(user_dir, exist_ok=True)
-            self.add_plugin_location(PluginLocation(
-                id="user",
-                name="User Plugins",
-                path=user_dir,
-                enabled=True,
-                auto_discover=True,
-                priority=200
-            ))
-    
-    def _save_plugin_locations(self):
-        """Save plugin locations to configuration."""
-        locations = [location.to_dict() for location in self.plugin_locations]
-        self.config.set_setting("plugins.locations", locations)
-        self.config.save()
-    
-    def add_plugin_location(self, location: PluginLocation):
-        """Add a plugin location."""
-        # Check if the location already exists
-        for existing in self.plugin_locations:
-            if existing.id == location.id:
-                # Update the existing location
-                existing.name = location.name
-                existing.path = location.path
-                existing.enabled = location.enabled
-                existing.auto_discover = location.auto_discover
-                existing.priority = location.priority
-                return
-        
-        # Add the new location
-        self.plugin_locations.append(location)
-        
-        # Add the directory to plugin_dirs for compatibility
-        if location.enabled and os.path.isdir(location.path):
-            self.add_plugin_directory(location.path)
-        
-        # Save the updated locations
-        self._save_plugin_locations()
-    
-    def remove_plugin_location(self, location_id: str):
-        """Remove a plugin location."""
-        for i, location in enumerate(self.plugin_locations):
-            if location.id == location_id:
-                # Remove the location
-                removed = self.plugin_locations.pop(i)
-                
-                # Remove the directory from plugin_dirs for compatibility
-                if removed.path in self.plugin_dirs:
-                    self.plugin_dirs.remove(removed.path)
-                
-                # Save the updated locations
-                self._save_plugin_locations()
-                return True
-        
-        return False
-    
-    def get_plugin_locations(self) -> List[PluginLocation]:
-        """Get all plugin locations."""
-        return self.plugin_locations
-    
-    def get_plugin_location(self, location_id: str) -> Optional[PluginLocation]:
-        """Get a specific plugin location."""
-        for location in self.plugin_locations:
-            if location.id == location_id:
-                return location
-        return None
-    
-    def enable_plugin_location(self, location_id: str) -> bool:
-        """Enable a plugin location."""
-        location = self.get_plugin_location(location_id)
-        if location:
-            location.enabled = True
-            
-            # Add the directory to plugin_dirs for compatibility
-            if os.path.isdir(location.path) and location.path not in self.plugin_dirs:
-                self.add_plugin_directory(location.path)
-            
-            # Save the updated locations
-            self._save_plugin_locations()
-            return True
-        
-        return False
-    
-    def disable_plugin_location(self, location_id: str) -> bool:
-        """Disable a plugin location."""
-        location = self.get_plugin_location(location_id)
-        if location:
-            location.enabled = False
-            
-            # Remove the directory from plugin_dirs for compatibility
-            if location.path in self.plugin_dirs:
-                self.plugin_dirs.remove(location.path)
-            
-            # Save the updated locations
-            self._save_plugin_locations()
-            return True
-        
-        return False
-    
-    def set_auto_discovery(self, enabled: bool):
-        """Enable or disable auto-discovery of plugins."""
-        self.auto_discovery_enabled = enabled
-        self.config.set_setting("plugins.auto_discovery", enabled)
-        self.config.save()
-    
-    def is_auto_discovery_enabled(self) -> bool:
-        """Check if auto-discovery is enabled."""
-        return self.auto_discovery_enabled
-    
-    def discover_plugins(self) -> List[EnhancedPluginManifest]:
-        """Discover plugins in all enabled locations."""
-        discovered = []
-        
-        # Skip if auto-discovery is disabled
-        if not self.auto_discovery_enabled:
-            return discovered
-        
-        # Sort locations by priority
-        locations = sorted(self.plugin_locations, key=lambda loc: loc.priority)
-        
-        # Discover plugins in each location
-        for location in locations:
-            if location.enabled and location.auto_discover:
-                try:
-                    # Discover plugins in the location
-                    location_plugins = self._discover_plugins_in_location(location)
-                    discovered.extend(location_plugins)
-                except Exception as e:
-                    logger.error(f"Error discovering plugins in location {location.id}: {e}", exc_info=True)
-        
-        return discovered
-    
-    def _discover_plugins_in_location(self, location: PluginLocation) -> List[EnhancedPluginManifest]:
-        """Discover plugins in a specific location."""
-        discovered = []
-        
-        if not os.path.isdir(location.path):
-            return discovered
-        
-        # Look for plugin directories
-        for item in os.listdir(location.path):
-            item_path = os.path.join(location.path, item)
-            
-            # Skip files
-            if not os.path.isdir(item_path):
-                # Check if it's a plugin zip file
-                if item.endswith(".zip") and os.path.isfile(item_path):
-                    try:
-                        # Extract manifest from zip
-                        manifest = self._extract_manifest_from_zip(item_path)
-                        if manifest:
-                            manifest.path = item_path
-                            discovered.append(manifest)
-                    except Exception as e:
-                        logger.error(f"Error extracting manifest from zip {item_path}: {e}", exc_info=True)
-                continue
-            
-            # Check for manifest.json
-            manifest_path = os.path.join(item_path, "manifest.json")
-            if os.path.isfile(manifest_path):
-                try:
-                    # Load manifest
-                    with open(manifest_path, "r") as f:
-                        manifest_data = json.load(f)
-                    
-                    # Create manifest object
-                    manifest = EnhancedPluginManifest.from_dict(manifest_data)
-                    manifest.path = item_path
-                    discovered.append(manifest)
-                except Exception as e:
-                    logger.error(f"Error loading manifest from {manifest_path}: {e}", exc_info=True)
-            else:
-                # Check for __init__.py (legacy plugin)
-                init_path = os.path.join(item_path, "__init__.py")
-                if os.path.isfile(init_path):
-                    # Create a synthetic manifest
-                    manifest = EnhancedPluginManifest(
-                        id=item,
-                        name=item,
-                        version="1.0.0",
-                        description="Legacy plugin",
-                        author="Unknown",
-                        plugin_type=PluginType.OTHER,
-                        main_class="__init__"
-                    )
-                    manifest.path = item_path
-                    discovered.append(manifest)
-        
-        return discovered
-    
-    def _extract_manifest_from_zip(self, zip_path: str) -> Optional[EnhancedPluginManifest]:
-        """Extract manifest from a plugin zip file."""
+    plugin_loaded = pyqtSignal(str)
+    plugin_activated = pyqtSignal(str)
+    plugin_deactivated = pyqtSignal(str)
+
+    def __init__(self, config=None, event_bus=None, toolbar=None):
+        super().__init__()
+        self.config = config
+        self.event_bus = event_bus
+        self.toolbar = toolbar
+        self._plugins: Dict[str, object] = {}
+        self._active_plugins: Dict[str, object] = {}
+
+    def load_plugin(self, plugin_dir: str, plugin_name: str) -> Optional[object]:
+        """Load a plugin from the given directory."""
         try:
-            with zipfile.ZipFile(zip_path, "r") as zip_file:
-                # Check if manifest.json exists
-                if "manifest.json" in zip_file.namelist():
-                    # Extract manifest
-                    with zip_file.open("manifest.json") as f:
-                        manifest_data = json.loads(f.read().decode("utf-8"))
-                    
-                    # Create manifest object
-                    manifest = EnhancedPluginManifest.from_dict(manifest_data)
-                    return manifest
-        except Exception as e:
-            logger.error(f"Error extracting manifest from zip {zip_path}: {e}", exc_info=True)
-        
-        return None
-    
-    def install_plugin_from_zip(self, zip_path: str, location_id: str = None) -> bool:
-        """Install a plugin from a zip file."""
-        try:
-            # Extract manifest
-            manifest = self._extract_manifest_from_zip(zip_path)
-            if not manifest:
-                logger.error(f"No manifest found in zip {zip_path}")
-                return False
-            
-            # Determine target location
-            target_location = None
-            if location_id:
-                target_location = self.get_plugin_location(location_id)
-            
-            if not target_location:
-                # Use the first enabled user location
-                for location in self.plugin_locations:
-                    if location.enabled and location.id != "builtin":
-                        target_location = location
-                        break
-            
-            if not target_location:
-                logger.error("No suitable location found for plugin installation")
-                return False
-            
-            # Create target directory
-            target_dir = os.path.join(target_location.path, manifest.id)
-            if os.path.exists(target_dir):
-                # Remove existing directory
-                shutil.rmtree(target_dir)
-            
-            # Extract zip to target directory
-            with zipfile.ZipFile(zip_path, "r") as zip_file:
-                zip_file.extractall(target_dir)
-            
-            logger.info(f"Installed plugin {manifest.id} to {target_dir}")
-            return True
-        
-        except Exception as e:
-            logger.error(f"Error installing plugin from zip {zip_path}: {e}", exc_info=True)
-            return False
-    
-    def uninstall_plugin(self, plugin_id: str) -> bool:
-        """Uninstall a plugin."""
-        try:
-            # Get the plugin
-            plugin = self.get_plugin(plugin_id)
-            if not plugin:
-                logger.error(f"Plugin {plugin_id} not found")
-                return False
-            
-            # Check if the plugin is loaded
-            if plugin_id in self.plugins:
-                # Disable the plugin first
-                self.disable_plugin(plugin_id)
-            
-            # Get the plugin directory
-            plugin_dir = None
-            if hasattr(plugin, "_location") and plugin._location:
-                plugin_dir = os.path.join(plugin._location.path, plugin_id)
-            elif hasattr(plugin, "manifest") and plugin.manifest and hasattr(plugin.manifest, "path"):
-                plugin_dir = plugin.manifest.path
-            
-            if not plugin_dir or not os.path.isdir(plugin_dir):
-                logger.error(f"Plugin directory not found for {plugin_id}")
-                return False
-            
-            # Remove the plugin directory
-            shutil.rmtree(plugin_dir)
-            
-            logger.info(f"Uninstalled plugin {plugin_id}")
-            return True
-        
-        except Exception as e:
-            logger.error(f"Error uninstalling plugin {plugin_id}: {e}", exc_info=True)
-            return False
-    
-    def _start_update_checker(self):
-        """Start the plugin update checker."""
-        # Create and start the update checker thread
-        self.plugin_update_checker = threading.Thread(
-            target=self._update_checker_thread,
-            daemon=True
-        )
-        self.plugin_update_checker.start()
-    
-    def _update_checker_thread(self):
-        """Thread function for checking plugin updates."""
-        while True:
-            try:
-                # Check for updates
-                self._check_for_plugin_updates()
-            except Exception as e:
-                logger.error(f"Error checking for plugin updates: {e}", exc_info=True)
-            
-            # Sleep for 24 hours
-            time.sleep(24 * 60 * 60)
-    
-    def _check_for_plugin_updates(self):
-        """Check for plugin updates."""
-        # Get all plugins
-        plugins = self.get_all_plugins()
-        
-        for plugin_id, plugin in plugins.items():
-            try:
-                # Check if the plugin has an update URL
-                if (hasattr(plugin, "manifest") and plugin.manifest and 
-                    hasattr(plugin.manifest, "update_url") and plugin.manifest.update_url):
-                    
-                    # TODO: Implement actual update checking logic
-                    # For now, just log that we would check for updates
-                    logger.info(f"Would check for updates for plugin {plugin_id} at {plugin.manifest.update_url}")
-            except Exception as e:
-                logger.error(f"Error checking for updates for plugin {plugin_id}: {e}", exc_info=True)
-    
-    def load_plugins(self):
-        """Load all plugins from the configured directories."""
-        # First, discover plugins
-        discovered_manifests = self.discover_plugins()
-        
-        # Sort manifests by dependencies
-        sorted_manifests = self._sort_plugins_by_dependencies(discovered_manifests)
-        
-        # Load each plugin
-        for manifest in sorted_manifests:
-            try:
-                # Skip disabled plugins
-                disabled_plugins = self.config.get_setting("plugins.disabled", [])
-                if manifest.id in disabled_plugins:
-                    logger.info(f"Skipping disabled plugin: {manifest.id}")
-                    continue
-                
-                # Load the plugin
-                self._load_enhanced_plugin(manifest)
-            except Exception as e:
-                logger.error(f"Error loading plugin {manifest.id}: {e}", exc_info=True)
-                self.failed_plugins[manifest.id] = str(e)
-        
-        # Activate plugins
-        for plugin_id, plugin in self.plugins.items():
-            try:
-                # Activate the plugin
-                plugin.activate()
-                logger.info(f"Activated plugin: {plugin_id}")
-            except Exception as e:
-                logger.error(f"Error activating plugin {plugin_id}: {e}", exc_info=True)
-                self.failed_plugins[plugin_id] = str(e)
-    
-    def _load_enhanced_plugin(self, manifest):
-        """Load a plugin from its manifest with enhanced functionality."""
-        try:
-            # Get the plugin directory
-            plugin_dir = manifest.path
-            
-            # Check if it's a zip file
-            if plugin_dir.endswith(".zip") and os.path.isfile(plugin_dir):
-                # Extract to temporary directory if not already cached
-                if plugin_dir not in self.plugin_zip_cache:
-                    temp_dir = tempfile.mkdtemp(prefix=f"toolbar_plugin_{manifest.id}_")
-                    with zipfile.ZipFile(plugin_dir, "r") as zip_file:
-                        zip_file.extractall(temp_dir)
-                    self.plugin_zip_cache[plugin_dir] = temp_dir
-                
-                # Use the extracted directory
-                plugin_dir = self.plugin_zip_cache[plugin_dir]
-            
-            # Import the main module
-            main_module_path = os.path.join(plugin_dir, manifest.main_class.replace(".", "/") + ".py")
-            if not os.path.isfile(main_module_path):
-                main_module_path = os.path.join(plugin_dir, "__init__.py")
-                if not os.path.isfile(main_module_path):
-                    raise ImportError(f"Main module not found: {manifest.main_class}")
-            
-            # Load the module
-            module_name = f"toolkit.plugins.{manifest.id}"
-            spec = importlib.util.spec_from_file_location(module_name, main_module_path)
-            if spec is None:
-                raise ImportError(f"Failed to create spec for {main_module_path}")
-            
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            
-            # Find the main class
-            main_class_name = manifest.main_class.split(".")[-1]
-            main_class = None
-            
-            for name, obj in inspect.getmembers(module):
-                if (inspect.isclass(obj) and 
-                    issubclass(obj, Plugin) and 
-                    obj is not Plugin and
-                    name == main_class_name):
-                    main_class = obj
-                    break
-            
-            if main_class is None:
-                raise ImportError(f"Main class not found: {main_class_name}")
-            
-            # Create plugin instance
+            # Import the plugin module
+            module_path = f"Toolbar.plugins.{plugin_name}"
+            module = importlib.import_module(module_path)
+
+            # Get the main plugin class
+            main_class_name = self._get_main_class_name(plugin_dir)
+            if not main_class_name:
+                raise ImportError(f"Main class not found in {plugin_name}")
+
+            # Initialize plugin
+            main_class = getattr(module, main_class_name)
             plugin_instance = main_class()
-            plugin_instance.manifest = manifest
             
-            # Set plugin location if it's an EnhancedPlugin
-            if isinstance(plugin_instance, EnhancedPlugin):
-                # Find the location this plugin came from
-                for location in self.plugin_locations:
-                    if plugin_dir.startswith(location.path):
-                        plugin_instance.set_location(location)
-                        break
-            
-            # Initialize the plugin
+            # Initialize with dependencies
             plugin_instance.initialize(self.config, self.event_bus, self.toolbar)
             
-            # Add to plugins dictionary
-            self.plugins[manifest.id] = plugin_instance
+            # Store plugin
+            self._plugins[plugin_name] = plugin_instance
+            logger.info(f"Loaded plugin: {plugin_name} v{plugin_instance.version}")
             
-            logger.info(f"Loaded plugin: {manifest.id} v{manifest.version}")
-            return True
-        
+            return plugin_instance
+
         except Exception as e:
-            logger.error(f"Error loading plugin {manifest.id}: {e}", exc_info=True)
-            self.failed_plugins[manifest.id] = str(e)
+            logger.error(f"Error loading plugin {plugin_name}: {str(e)}")
+            return None
+
+    def activate_plugin(self, plugin_name: str) -> bool:
+        """Activate a loaded plugin."""
+        if plugin_name not in self._plugins:
             return False
-    
-    def get_plugins_by_extended_type(self, plugin_type: ExtendedPluginType) -> Dict[str, Plugin]:
-        """Get all plugins of a specific extended type."""
-        result = {}
-        
-        for name, plugin in self.plugins.items():
-            if (plugin.manifest and 
-                hasattr(plugin.manifest, "plugin_type") and 
-                plugin.manifest.plugin_type == plugin_type):
-                result[name] = plugin
-        
-        return result
-    
-    def get_prompt_plugins(self) -> Dict[str, PromptPlugin]:
-        """Get all prompt plugins."""
-        result = {}
-        
-        for name, plugin in self.plugins.items():
-            if isinstance(plugin, PromptPlugin):
-                result[name] = plugin
-        
-        return result
-    
-    def get_scripting_plugins(self) -> Dict[str, ScriptingPlugin]:
-        """Get all scripting plugins."""
-        result = {}
-        
-        for name, plugin in self.plugins.items():
-            if isinstance(plugin, ScriptingPlugin):
-                result[name] = plugin
-        
-        return result
+            
+        try:
+            plugin = self._plugins[plugin_name]
+            plugin.on_activate()
+            self._active_plugins[plugin_name] = plugin
+            self.plugin_activated.emit(plugin_name)
+            logger.info(f"Activated plugin: {plugin_name}")
+            return True
+        except Exception as e:
+            logger.error(f"Error activating plugin {plugin_name}: {str(e)}")
+            return False
+
+    def deactivate_plugin(self, plugin_name: str) -> bool:
+        """Deactivate an active plugin."""
+        if plugin_name not in self._active_plugins:
+            return False
+            
+        try:
+            plugin = self._active_plugins[plugin_name]
+            plugin.on_deactivate()
+            del self._active_plugins[plugin_name]
+            self.plugin_deactivated.emit(plugin_name)
+            logger.info(f"Deactivated plugin: {plugin_name}")
+            return True
+        except Exception as e:
+            logger.error(f"Error deactivating plugin {plugin_name}: {str(e)}")
+            return False
+
+    def get_active_plugins(self) -> List[object]:
+        """Get list of currently active plugins."""
+        return list(self._active_plugins.values())
+
+    def get_all_plugins(self) -> List[object]:
+        """Get list of all loaded plugins."""
+        return list(self._plugins.values())
+
+    def _get_main_class_name(self, plugin_dir: str) -> Optional[str]:
+        """Get the main plugin class name from manifest."""
+        manifest_path = os.path.join(plugin_dir, "manifest.json")
+        if not os.path.exists(manifest_path):
+            return None
+            
+        try:
+            with open(manifest_path) as f:
+                manifest = json.load(f)
+                return manifest.get("main_class")
+        except Exception:
+            return None
