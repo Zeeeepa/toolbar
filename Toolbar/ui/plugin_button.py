@@ -1,15 +1,16 @@
-from typing import Any, Dict, List, Optional
 import logging
-from PyQt5.QtWidgets import QPushButton, QMenu, QAction
-from PyQt5.QtGui import QIcon
+import os
+from typing import Any, Dict, List, Optional
 from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QIcon
+from PyQt5.QtWidgets import QPushButton, QMenu, QAction
 
 logger = logging.getLogger(__name__)
 
 class PluginButton(QPushButton):
-    """Button for plugin actions in the toolbar."""
+    """Button for plugin actions."""
 
-    def __init__(self, plugin: Any, parent: Any = None):
+    def __init__(self, plugin: Any, parent: Any = None) -> None:
         super().__init__(parent)
         self.plugin = plugin
         self.init_ui()
@@ -18,48 +19,48 @@ class PluginButton(QPushButton):
         """Initialize the button UI."""
         try:
             # Set button properties
-            self.setText(self.plugin.name)
+            self.setToolTip(self.plugin.description)
+            
+            # Set icon if available
             if self.plugin.icon:
-                self.setIcon(QIcon(self.plugin.icon))
+                icon_path = os.path.join("icons", self.plugin.icon)
+                if os.path.exists(icon_path):
+                    self.setIcon(QIcon(icon_path))
+                else:
+                    logger.warning("Icon not found: %s", icon_path)
 
             # Create context menu
             menu = QMenu(self)
-            for action in self.plugin.get_actions():
-                try:
+            actions = self.plugin.get_actions()
+            if actions:
+                for action in actions:
                     menu_action = QAction(action["name"], self)
-                    menu_action.triggered.connect(action["callback"])
+                    menu_action.triggered.connect(
+                        lambda checked, a=action: self._execute_action(a)
+                    )
                     menu.addAction(menu_action)
-                except Exception as e:
-                    logger.error(f"Error adding action {action}: {str(e)}")
-                    logger.error(str(e), exc_info=True)
+            else:
+                # Add default action if no actions defined
+                default_action = QAction(self.plugin.name, self)
+                default_action.triggered.connect(self._execute_default_action)
+                menu.addAction(default_action)
 
-            # Set button style
-            self.setStyleSheet("""
-                QPushButton {
-                    background: transparent;
-                    border: none;
-                    padding: 5px;
-                    min-width: 30px;
-                    min-height: 30px;
-                    color: white;
-                }
-                QPushButton:hover {
-                    background: rgba(255, 255, 255, 0.1);
-                }
-            """)
-
-            # Set context menu
             self.setMenu(menu)
 
         except Exception as e:
-            logger.error(f"Error initializing plugin button for {self.plugin.name}: {str(e)}")
+            logger.error("Error initializing plugin button for %s: %s", 
+                        self.plugin.name, str(e))
             logger.error(str(e), exc_info=True)
 
-    def mousePressEvent(self, event: Any) -> None:
-        """Handle mouse press events."""
-        if event.button() == Qt.LeftButton:
-            # Show context menu on left click
-            if self.menu():
-                self.showMenu()
-        else:
-            super().mousePressEvent(event)
+    def _execute_action(self, action: Dict[str, Any]) -> None:
+        """Execute a plugin action."""
+        try:
+            self.plugin.execute_action(action["id"], action.get("params", {}))
+        except Exception as e:
+            logger.error("Error executing action %s: %s", action["id"], str(e))
+            logger.error(str(e), exc_info=True)
+
+    def _execute_default_action(self) -> None:
+        """Execute the default plugin action."""
+        try:
+            self.plugin.execute_action("default", {})
