@@ -1,49 +1,73 @@
+import logging
 from PyQt5.QtWidgets import QPushButton, QMenu, QAction
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import Qt
+
+logger = logging.getLogger(__name__)
 
 class PluginButton(QPushButton):
     def __init__(self, plugin, parent=None):
         super().__init__(parent)
         self.plugin = plugin
-        self.parent = parent
         self.init_ui()
-        
+
     def init_ui(self):
-        """Initialize the plugin button UI"""
         try:
-            # Set button properties
-            self.setFixedSize(32, 32)
-            self.setIcon(QIcon(self.plugin.get_icon()))
-            self.setToolTip(self.plugin.get_name())
-            
+            # Set button text and icon
+            self.setText(self.plugin.name)
+            icon = self.plugin.get_icon()
+            if icon:
+                if isinstance(icon, str):
+                    self.setIcon(QIcon(icon))
+                else:
+                    self.setIcon(icon)
+
             # Create context menu
-            menu = QMenu(self)
-            
-            # Add plugin actions
+            self.menu = QMenu(self)
             for action in self.plugin.get_actions():
                 menu_action = QAction(action["name"], self)
                 menu_action.triggered.connect(action["callback"])
                 if "icon" in action:
                     menu_action.setIcon(QIcon(action["icon"]))
-                menu.addAction(menu_action)
-                
-            # Add separator and settings
-            menu.addSeparator()
-            settings_action = QAction("Settings", self)
-            settings_action.triggered.connect(self.plugin.show_settings)
-            menu.addAction(settings_action)
-            
-            self.setMenu(menu)
-            
+                self.menu.addAction(menu_action)
+
+            self.setContextMenuPolicy(Qt.CustomContextMenu)
+            self.customContextMenuRequested.connect(self.show_context_menu)
+
+            # Set button style
+            self.setStyleSheet("""
+                QPushButton {
+                    background-color: transparent;
+                    border: none;
+                    padding: 5px;
+                    min-width: 30px;
+                    min-height: 30px;
+                }
+                QPushButton:hover {
+                    background-color: rgba(255, 255, 255, 0.1);
+                }
+                QPushButton:pressed {
+                    background-color: rgba(255, 255, 255, 0.2);
+                }
+            """)
+
+            # Connect click handler
+            self.clicked.connect(self.handle_click)
+
         except Exception as e:
-            self.parent.logger.error(f"Error initializing plugin button for {self.plugin.name}: {str(e)}")
-            self.parent.logger.error(f"{str(e)}", exc_info=True)
-            
-    def mousePressEvent(self, event):
-        """Handle mouse press events"""
-        if event.button() == Qt.LeftButton:
-            # Show plugin menu on left click
-            self.showMenu()
-        else:
-            super().mousePressEvent(event)
+            logger.error(f"Error initializing plugin button for {self.plugin.name}: {str(e)}")
+            logger.error(str(e), exc_info=True)
+
+    def handle_click(self):
+        try:
+            self.plugin.handle_click()
+        except Exception as e:
+            logger.error(f"Error handling click for {self.plugin.name}: {str(e)}")
+            logger.error(str(e), exc_info=True)
+
+    def show_context_menu(self, pos):
+        try:
+            self.menu.exec_(self.mapToGlobal(pos))
+        except Exception as e:
+            logger.error(f"Error showing context menu for {self.plugin.name}: {str(e)}")
+            logger.error(str(e), exc_info=True)

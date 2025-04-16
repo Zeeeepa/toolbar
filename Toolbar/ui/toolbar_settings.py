@@ -5,7 +5,7 @@ import logging
 from typing import Dict, List, Any, Optional
 
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QSpinBox, QCheckBox, QTabWidget
+    QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit, QCheckBox, QGroupBox
 )
 from PyQt5.QtCore import Qt
 
@@ -18,97 +18,108 @@ class SettingsDialog(QDialog):
         """Initialize the settings dialog."""
         super().__init__(parent)
         self.parent = parent
-        self.setWindowTitle("Toolbar Settings")
-        self.setup_ui()
+        self.config = parent.config if parent else None
+        self.init_ui()
         
-    def setup_ui(self):
+    def init_ui(self):
         """Initialize the settings dialog UI."""
+        self.setWindowTitle('Settings')
         layout = QVBoxLayout()
-        
-        # Create tab widget
-        tabs = QTabWidget()
-        
-        # General settings tab
-        general_tab = QDialog()
+
+        # General Settings
+        general_group = QGroupBox("General Settings")
         general_layout = QVBoxLayout()
-        
-        # Position settings
-        position_group = QHBoxLayout()
-        position_label = QLabel("Screen Position:")
-        self.position_x = QSpinBox()
-        self.position_y = QSpinBox()
-        position_group.addWidget(position_label)
-        position_group.addWidget(self.position_x)
-        position_group.addWidget(self.position_y)
-        general_layout.addLayout(position_group)
-        
-        # Size settings
-        size_group = QHBoxLayout()
-        size_label = QLabel("Window Size:")
-        self.width_spin = QSpinBox()
-        self.height_spin = QSpinBox()
-        size_group.addWidget(size_label)
-        size_group.addWidget(self.width_spin)
-        size_group.addWidget(self.height_spin)
-        general_layout.addLayout(size_group)
-        
-        # Opacity setting
-        opacity_group = QHBoxLayout()
-        opacity_label = QLabel("Opacity:")
-        self.opacity_spin = QSpinBox()
-        self.opacity_spin.setRange(10, 100)
-        self.opacity_spin.setSingleStep(5)
-        opacity_group.addWidget(opacity_label)
-        opacity_group.addWidget(self.opacity_spin)
-        general_layout.addLayout(opacity_group)
-        
+
+        # Startup behavior
+        startup_layout = QHBoxLayout()
+        startup_label = QLabel("Start with Windows:")
+        self.startup_checkbox = QCheckBox()
+        self.startup_checkbox.setChecked(self.config.get("start_with_windows", False) if self.config else False)
+        startup_layout.addWidget(startup_label)
+        startup_layout.addWidget(self.startup_checkbox)
+        startup_layout.addStretch()
+        general_layout.addLayout(startup_layout)
+
         # Always on top
-        self.always_on_top = QCheckBox("Always on Top")
-        general_layout.addWidget(self.always_on_top)
-        
-        general_tab.setLayout(general_layout)
-        tabs.addTab(general_tab, "General")
-        
-        # Add tabs to main layout
-        layout.addWidget(tabs)
-        
-        # Dialog buttons
-        button_box = QHBoxLayout()
+        ontop_layout = QHBoxLayout()
+        ontop_label = QLabel("Always on top:")
+        self.ontop_checkbox = QCheckBox()
+        self.ontop_checkbox.setChecked(self.config.get("always_on_top", True) if self.config else True)
+        ontop_layout.addWidget(ontop_label)
+        ontop_layout.addWidget(self.ontop_checkbox)
+        ontop_layout.addStretch()
+        general_layout.addLayout(ontop_layout)
+
+        general_group.setLayout(general_layout)
+        layout.addWidget(general_group)
+
+        # Plugin Settings
+        plugin_group = QGroupBox("Plugin Settings")
+        plugin_layout = QVBoxLayout()
+
+        # Plugin directory
+        plugin_dir_layout = QHBoxLayout()
+        plugin_dir_label = QLabel("Plugin Directory:")
+        self.plugin_dir_edit = QLineEdit()
+        self.plugin_dir_edit.setText(self.config.get("plugin_dir", "") if self.config else "")
+        plugin_dir_browse = QPushButton("Browse...")
+        plugin_dir_layout.addWidget(plugin_dir_label)
+        plugin_dir_layout.addWidget(self.plugin_dir_edit)
+        plugin_dir_layout.addWidget(plugin_dir_browse)
+        plugin_layout.addLayout(plugin_dir_layout)
+
+        # Auto-load plugins
+        autoload_layout = QHBoxLayout()
+        autoload_label = QLabel("Auto-load plugins:")
+        self.autoload_checkbox = QCheckBox()
+        self.autoload_checkbox.setChecked(self.config.get("auto_load_plugins", True) if self.config else True)
+        autoload_layout.addWidget(autoload_label)
+        autoload_layout.addWidget(self.autoload_checkbox)
+        autoload_layout.addStretch()
+        plugin_layout.addLayout(autoload_layout)
+
+        plugin_group.setLayout(plugin_layout)
+        layout.addWidget(plugin_group)
+
+        # Buttons
+        button_layout = QHBoxLayout()
         save_button = QPushButton("Save")
-        cancel_button = QPushButton("Cancel")
         save_button.clicked.connect(self.save_settings)
+        cancel_button = QPushButton("Cancel")
         cancel_button.clicked.connect(self.reject)
-        button_box.addWidget(save_button)
-        button_box.addWidget(cancel_button)
-        layout.addLayout(button_box)
-        
+        button_layout.addStretch()
+        button_layout.addWidget(save_button)
+        button_layout.addWidget(cancel_button)
+        layout.addLayout(button_layout)
+
         self.setLayout(layout)
         
     def save_settings(self):
         """Save the current settings and close dialog."""
-        # Get values from UI elements
-        settings = {
-            'position': (self.position_x.value(), self.position_y.value()),
-            'size': (self.width_spin.value(), self.height_spin.value()),
-            'opacity': self.opacity_spin.value() / 100.0,
-            'always_on_top': self.always_on_top.isChecked()
-        }
-        
-        # Update parent toolbar with new settings
-        if self.parent:
-            self.parent.apply_settings(settings)
-        
-        self.accept()
-        
-    def load_settings(self, settings):
-        """Load existing settings into the dialog."""
-        if 'position' in settings:
-            self.position_x.setValue(settings['position'][0])
-            self.position_y.setValue(settings['position'][1])
-        if 'size' in settings:
-            self.width_spin.setValue(settings['size'][0])
-            self.height_spin.setValue(settings['size'][1])
-        if 'opacity' in settings:
-            self.opacity_spin.setValue(int(settings['opacity'] * 100))
-        if 'always_on_top' in settings:
-            self.always_on_top.setChecked(settings['always_on_top'])
+        if not self.config:
+            logger.warning("No config object available")
+            self.reject()
+            return
+
+        try:
+            self.config.set("start_with_windows", self.startup_checkbox.isChecked())
+            self.config.set("always_on_top", self.ontop_checkbox.isChecked())
+            self.config.set("plugin_dir", self.plugin_dir_edit.text())
+            self.config.set("auto_load_plugins", self.autoload_checkbox.isChecked())
+            self.config.save()
+            
+            if self.parent:
+                # Update parent window flags
+                flags = self.parent.windowFlags()
+                if self.ontop_checkbox.isChecked():
+                    flags |= Qt.WindowStaysOnTopHint
+                else:
+                    flags &= ~Qt.WindowStaysOnTopHint
+                self.parent.setWindowFlags(flags)
+                self.parent.show()
+            
+            self.accept()
+        except Exception as e:
+            logger.error(f"Error saving settings: {str(e)}")
+            logger.error(str(e), exc_info=True)
+            self.reject()
