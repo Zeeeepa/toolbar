@@ -1,50 +1,44 @@
-"""
-Plugin button implementation.
-"""
-from PyQt5.QtWidgets import QPushButton
+from PyQt5.QtWidgets import QPushButton, QSizePolicy
 from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import Qt
+import logging
+
+logger = logging.getLogger(__name__)
 
 class PluginButton(QPushButton):
-    """Button for plugin actions in the toolbar."""
-    
     def __init__(self, plugin, parent=None):
-        """Initialize plugin button."""
         super().__init__(parent)
-        
-        # Set button properties
         self.plugin = plugin
-        self.setText(plugin.name)
+        self.init_ui()
+
+    def init_ui(self):
+        """Initialize the button UI"""
+        # Set button text
+        self.setText(self.plugin.name)
         
-        # Handle icon
-        icon = plugin.get_icon()
-        if isinstance(icon, str):
-            # If icon is a path string, create QIcon from it
-            if icon.startswith(":"):
-                # Qt resource path
+        # Set icon if available
+        icon = self.plugin.get_icon()
+        if icon:
+            if isinstance(icon, str):
+                # Convert string path to QIcon
                 self.setIcon(QIcon(icon))
             else:
-                # File path
-                self.setIcon(QIcon.fromTheme(icon) or QIcon(icon))
-        elif isinstance(icon, QIcon):
-            # If already a QIcon, use directly
-            self.setIcon(icon)
-            
+                self.setIcon(icon)
+        
         # Set tooltip
-        if hasattr(plugin, 'description'):
-            self.setToolTip(plugin.description)
-            
+        tooltip = self.plugin.get_description() or self.plugin.name
+        self.setToolTip(tooltip)
+        
         # Connect click handler
         self.clicked.connect(self._handle_click)
         
-        # Style settings
-        self.setFixedSize(40, 40)  # Square button
-        self.setIconSize(self.size() * 0.7)  # Icon size 70% of button
+        # Set size policy
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         
     def _handle_click(self):
-        """Handle button click by activating plugin."""
+        """Handle button click"""
         try:
-            self.plugin.activate()
+            self.plugin.on_click()
         except Exception as e:
-            # Log error and potentially show notification
-            print(f"Error activating plugin {self.plugin.name}: {str(e)}")
+            logger.error(f"Error handling click for plugin {self.plugin.name}: {str(e)}")
+            if hasattr(self.parent(), 'show_notification'):
+                self.parent().show_notification(f"Error in plugin {self.plugin.name}: {str(e)}")

@@ -1,229 +1,135 @@
-"""
-Toolbar UI implementation.
-"""
+from PyQt5.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QPushButton,
+                           QMenu, QAction, QSystemTrayIcon, QApplication)
+from PyQt5.QtCore import Qt, QPoint, QRect
+from PyQt5.QtGui import QIcon, QScreen
 import logging
-import os
-from typing import Dict, Optional
 
-from PyQt5.QtCore import Qt, QPoint
-from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import (
-    QMainWindow, QWidget, QHBoxLayout, QPushButton,
-    QSystemTrayIcon, QMenu, QAction, QDesktopWidget,
-    QDialog
-)
-
-from ..core.config import Config
-from ..core.enhanced_plugin_system import EnhancedPlugin
-from .notification_widget import NotificationWidget
 from .plugin_button import PluginButton
 from .toolbar_settings import SettingsDialog
 from .plugin_manager import PluginManagerDialog
+from .notification_widget import NotificationWidget
 
 logger = logging.getLogger(__name__)
 
 class ToolbarUI(QMainWindow):
-    """Main toolbar window."""
-
-    def __init__(self, config: Config, plugins: Dict[str, EnhancedPlugin]):
-        """Initialize the toolbar UI."""
+    def __init__(self, plugin_manager=None):
         super().__init__()
-
-        self.config = config
-        self.plugins = plugins
+        self.plugin_manager = plugin_manager
         self.notification_widget = None
-        self.settings_dialog = None
-        self.plugin_manager_dialog = None
-        
-        # Store the original size before going fullwidth
-        self.original_width = 800
-        self.original_height = 40  # Reduced height to match taskbar
-        
-        # Initialize UI
-        self._init_ui()
-        
-    def _init_ui(self):
-        """Initialize the UI components."""
-        # Set window flags for taskbar-like behavior
-        self.setWindowFlags(
-            Qt.Tool |  # No taskbar entry
-            Qt.FramelessWindowHint |  # No window frame
-            Qt.WindowStaysOnTopHint  # Always on top
-        )
-        
-        # Set window attributes
-        self.setAttribute(Qt.WA_TranslucentBackground)  # Enable transparency
-        
+        self.init_ui()
+
+    def init_ui(self):
+        """Initialize the UI components"""
+        self.setWindowTitle("Toolbar")
+        self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Tool)
+
         # Create central widget and layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        
-        # Set background color and style
-        central_widget.setStyleSheet("""
-            QWidget {
-                background-color: rgba(32, 32, 32, 240);
-                border: none;
-            }
-            QPushButton {
-                background-color: transparent;
-                color: white;
-                border: none;
-                padding: 5px;
-                margin: 2px;
-            }
-            QPushButton:hover {
-                background-color: rgba(255, 255, 255, 30);
-            }
-            QPushButton:pressed {
-                background-color: rgba(255, 255, 255, 20);
-            }
-        """)
-        
-        # Create horizontal layout
-        layout = QHBoxLayout()
-        layout.setContentsMargins(2, 2, 2, 2)  # Minimal margins
-        layout.setSpacing(2)  # Minimal spacing
-        central_widget.setLayout(layout)
-        
+        self.layout = QHBoxLayout(central_widget)
+        self.layout.setContentsMargins(5, 5, 5, 5)
+        self.layout.setSpacing(5)
+
         # Add settings button
-        settings_btn = QPushButton()
-        settings_btn.setIcon(QIcon.fromTheme("preferences-system"))
-        settings_btn.setToolTip("Settings")
-        settings_btn.setFixedSize(36, 36)
-        settings_btn.clicked.connect(self.show_settings)
-        layout.addWidget(settings_btn)
-        
+        self.settings_btn = QPushButton("Settings")
+        self.settings_btn.clicked.connect(self.show_settings)
+        self.layout.addWidget(self.settings_btn)
+
         # Add plugins button
-        plugins_btn = QPushButton()
-        plugins_btn.setIcon(QIcon.fromTheme("preferences-plugin"))
-        plugins_btn.setToolTip("Plugins")
-        plugins_btn.setFixedSize(36, 36)
-        plugins_btn.clicked.connect(self.show_plugin_manager)
-        layout.addWidget(plugins_btn)
-        
-        # Add stretch to push buttons to the left
-        layout.addStretch()
-        
+        self.plugins_btn = QPushButton("Plugins")
+        self.plugins_btn.clicked.connect(self.show_plugin_manager)
+        self.layout.addWidget(self.plugins_btn)
+
         # Load plugin buttons
-        self._load_plugins(layout)
-        
-        # Set initial size
-        self.resize(self.original_width, self.original_height)
-        
-        # Position toolbar
-        self._position_toolbar()
-        
-        # Create system tray icon
-        self._create_tray()
-        
+        self._load_plugins()
+
+        # Add spacer to push buttons to the left
+        self.layout.addStretch()
+
         # Initialize notification widget
         self.notification_widget = NotificationWidget(self)
-        logger.info("UI components initialized")
+        logger.info("Notification widget initialized")
 
-    def _position_toolbar(self):
-        """Position the toolbar on the screen."""
-        # Get screen geometry
-        screen = QDesktopWidget().screenGeometry()
-        
-        # Calculate position for bottom of screen
-        y = screen.height() - self.height()
-        
-        # Set width to full screen width
-        self.setFixedWidth(screen.width())
-        
-        # Move to position
-        self.move(0, y)
-        
-        logger.info(f"Positioned toolbar at ({self.x()}, {y})")
+        # Set up system tray
+        self._setup_system_tray()
 
-    def _create_tray(self):
-        """Create the system tray icon and menu."""
-        # Create tray icon with default app icon
-        self.tray_icon = QSystemTrayIcon(self)
-        self.tray_icon.setIcon(QIcon.fromTheme("applications-system"))
-        
-        # Create tray menu
-        tray_menu = QMenu()
-        tray_menu.setStyleSheet("""
-            QMenu {
-                background-color: rgb(32, 32, 32);
-                color: white;
-                border: 1px solid rgb(64, 64, 64);
-            }
-            QMenu::item:selected {
-                background-color: rgb(64, 64, 64);
-            }
-        """)
-        
-        # Add actions
-        settings_action = QAction("Settings", self)
-        settings_action.triggered.connect(self.show_settings)
-        tray_menu.addAction(settings_action)
-        
-        plugins_action = QAction("Plugins", self)
-        plugins_action.triggered.connect(self.show_plugin_manager)
-        tray_menu.addAction(plugins_action)
-        
-        tray_menu.addSeparator()
-        
-        quit_action = QAction("Quit", self)
-        quit_action.triggered.connect(self.close)
-        tray_menu.addAction(quit_action)
-        
-        # Set tray icon menu
-        self.tray_icon.setContextMenu(tray_menu)
-        
-        # Show tray icon
-        self.tray_icon.show()
-        
-        logger.info("System tray icon created")
+        # Position toolbar at bottom of screen
+        self._position_toolbar()
 
-    def _load_plugins(self, layout):
-        """Load plugin buttons into the toolbar."""
-        button_count = 0
-        
-        for plugin_id, plugin in self.plugins.items():
+    def _load_plugins(self):
+        """Load plugin buttons"""
+        if not self.plugin_manager:
+            return
+
+        loaded_buttons = 0
+        for plugin in self.plugin_manager.get_plugins():
             try:
                 button = PluginButton(plugin, self)
-                layout.addWidget(button)
-                button_count += 1
-                logger.info(f"Added button for plugin: {plugin_id}")
+                self.layout.addWidget(button)
+                loaded_buttons += 1
             except Exception as e:
-                logger.error(f"Error creating button for plugin {plugin_id}: {str(e)}")
-                logger.error(f"Traceback:", exc_info=True)
-                
-        logger.info(f"Loaded {button_count} plugin buttons")
+                logger.error(f"Error creating button for plugin {plugin.name}: {str(e)}")
+                continue
+
+        logger.info(f"Loaded {loaded_buttons} plugin buttons")
+
+    def _setup_system_tray(self):
+        """Set up system tray icon and menu"""
+        self.tray_icon = QSystemTrayIcon(self)
+        self.tray_menu = QMenu()
+
+        show_action = QAction("Show", self)
+        show_action.triggered.connect(self.show)
+        self.tray_menu.addAction(show_action)
+
+        hide_action = QAction("Hide", self)
+        hide_action.triggered.connect(self.hide)
+        self.tray_menu.addAction(hide_action)
+
+        exit_action = QAction("Exit", self)
+        exit_action.triggered.connect(self.close)
+        self.tray_menu.addAction(exit_action)
+
+        self.tray_icon.setContextMenu(self.tray_menu)
+        self.tray_icon.show()
+        logger.info("System tray icon created")
+
+    def _position_toolbar(self):
+        """Position the toolbar at the bottom of the screen"""
+        screen = QApplication.primaryScreen()
+        if not screen:
+            return
+            
+        geometry = screen.availableGeometry()
+        toolbar_height = 40
+        self.setGeometry(0, geometry.height() - toolbar_height, geometry.width(), toolbar_height)
 
     def show_settings(self):
-        """Show the settings dialog."""
-        if not self.settings_dialog:
-            self.settings_dialog = SettingsDialog(self.config, self)
-            
-        self.settings_dialog.show()
-        logger.info("Settings dialog shown")
+        """Show settings dialog"""
+        dialog = SettingsDialog(self)
+        dialog.exec_()
 
     def show_plugin_manager(self):
-        """Show the plugin manager dialog."""
-        if not self.plugin_manager_dialog:
-            self.plugin_manager_dialog = PluginManagerDialog(self.plugins, self)
-            
-        # Reload plugins when dialog is closed
-        if self.plugin_manager_dialog.exec_() == QDialog.Accepted:
-            self._reload_plugins()
-            
-        logger.info("Plugin manager dialog shown")
+        """Show plugin manager dialog"""
+        dialog = PluginManagerDialog(self)
+        dialog.exec_()
 
-    def _reload_plugins(self):
-        """Reload all plugin buttons."""
-        # Remove existing buttons
-        for i in reversed(range(self.centralWidget().layout().count())):
-            widget = self.centralWidget().layout().itemAt(i).widget()
-            if widget:
-                widget.setParent(None)
-            
-        # Reload buttons
-        self._load_plugins(self.centralWidget().layout())
+    def show_notification(self, message, duration=3000):
+        """Show notification message"""
+        if self.notification_widget:
+            self.notification_widget.show_message(message, duration)
 
-    def show_notification(self, title: str, message: str, duration: Optional[int] = None):
-        """Show a notification."""
-        self.notification_widget.show_notification(title, message, duration)
+    def force_show(self):
+        """Force show the toolbar"""
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        
+        # Log current state
+        logger.info(f"Force showing toolbar. Current geometry: {self.geometry().x()}, {self.geometry().y()}, {self.geometry().width()}x{self.geometry().height()}")
+        logger.info(f"Current window flags: {self.windowFlags()}")
+        logger.info(f"Current opacity: {self.windowOpacity()}")
+        
+        # Ensure proper positioning
+        self._position_toolbar()
+        logger.info(f"Toolbar position after force show: {self.geometry().x()}, {self.geometry().y()}, {self.geometry().width()}x{self.geometry().height()}")
