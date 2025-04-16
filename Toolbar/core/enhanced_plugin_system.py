@@ -2,172 +2,152 @@
 import os
 import sys
 import logging
+import importlib
 import importlib.util
-from typing import Dict, List, Optional
+from typing import Dict, List, Any, Optional
 
 logger = logging.getLogger(__name__)
 
+class EnhancedPlugin:
+    """Base class for enhanced plugins"""
+    def __init__(self):
+        self.name = "Base Plugin"
+        self.version = "1.0.0"
+        self.description = "Base plugin class"
+        self._active = False
+
+    def initialize(self, config=None, event_bus=None, toolbar=None):
+        """Initialize the plugin"""
+        pass
+
+    def activate(self):
+        """Activate the plugin"""
+        self._active = True
+
+    def deactivate(self):
+        """Deactivate the plugin"""
+        self._active = False
+
+    def is_active(self) -> bool:
+        """Check if plugin is active"""
+        return self._active
+
+    def get_icon(self) -> str:
+        """Get plugin icon path"""
+        return ""
+
+    def get_actions(self) -> List[Dict[str, Any]]:
+        """Get plugin actions"""
+        return []
+
+    def handle_click(self):
+        """Handle plugin button click"""
+        pass
+
 class EnhancedPluginManager:
-    def __init__(self, config=None, event_bus=None, toolbar=None):
+    """Enhanced plugin manager with improved error handling"""
+    def __init__(self, config=None):
         self.config = config
-        self.event_bus = event_bus
-        self.toolbar = toolbar
-        self.plugins = {}
+        self.plugins: Dict[str, EnhancedPlugin] = {}
         self.plugin_dirs = []
         self._load_plugin_directories()
 
     def _load_plugin_directories(self):
-        """Load plugin directories from configuration"""
+        """Load plugin directories from config"""
         try:
             # Add default plugin directory
-            default_plugin_dir = os.path.join(os.path.dirname(__file__), "..", "plugins")
-            self.add_plugin_directory(default_plugin_dir)
+            default_dir = os.path.join(os.path.dirname(__file__), "..", "plugins")
+            self.add_plugin_directory(default_dir)
 
             # Add user plugin directory
-            user_plugin_dir = os.path.expanduser("~/.toolbar/plugins")
-            self.add_plugin_directory(user_plugin_dir)
+            user_dir = os.path.expanduser("~/.toolbar/plugins")
+            self.add_plugin_directory(user_dir)
 
             # Add configured plugin directories
-            if self.config and "plugin_dirs" in self.config:
-                for plugin_dir in self.config["plugin_dirs"]:
-                    self.add_plugin_directory(plugin_dir)
+            if self.config and hasattr(self.config, "get"):
+                plugin_dirs = self.config.get("plugin_dirs", [])
+                for directory in plugin_dirs:
+                    self.add_plugin_directory(directory)
 
         except Exception as e:
             logger.error(f"Error loading plugin directories: {str(e)}")
-            logger.exception(e)
+            logger.error(str(e), exc_info=True)
 
     def add_plugin_directory(self, directory: str):
-        """Add a directory to search for plugins"""
-        try:
-            if os.path.exists(directory) and os.path.isdir(directory):
-                if directory not in self.plugin_dirs:
-                    self.plugin_dirs.append(directory)
-                    logger.info(f"Added plugin directory: {directory}")
-                    if self.config:
-                        self.config.save()
-        except Exception as e:
-            logger.error(f"Error adding plugin directory {directory}: {str(e)}")
-            logger.exception(e)
+        """Add a plugin directory"""
+        if os.path.exists(directory) and directory not in self.plugin_dirs:
+            self.plugin_dirs.append(directory)
+            logger.info(f"Added plugin directory: {directory}")
 
-    def _load_enhanced_plugin(self, plugin_dir: str, plugin_name: str) -> Optional[object]:
-        """Load a plugin from the given directory"""
+    def _load_enhanced_plugin(self, plugin_dir: str, plugin_name: str) -> Optional[EnhancedPlugin]:
+        """Load a plugin from directory"""
         try:
-            # Find plugin module
-            plugin_path = os.path.join(plugin_dir, plugin_name)
-            init_file = os.path.join(plugin_path, "__init__.py")
-            
-            if not os.path.exists(init_file):
+            # Import plugin module
+            module_path = os.path.join(plugin_dir, plugin_name)
+            if not os.path.isdir(module_path):
                 return None
 
-            # Import plugin module
-            spec = importlib.util.spec_from_file_location(
-                f"Toolbar.plugins.{plugin_name}", init_file
-            )
+            init_path = os.path.join(module_path, "__init__.py")
+            if not os.path.exists(init_path):
+                return None
+
+            module_name = f"Toolbar.plugins.{plugin_name}"
+            spec = importlib.util.spec_from_file_location(module_name, init_path)
+            if not spec or not spec.loader:
+                return None
+
             module = importlib.util.module_from_spec(spec)
-            sys.modules[spec.name] = module
+            sys.modules[module_name] = module
             spec.loader.exec_module(module)
 
             # Get plugin class
-            main_class_name = getattr(module, "MAIN_CLASS", None)
-            if not main_class_name:
-                main_class_name = "".join(word.capitalize() for word in plugin_name.split("_")) + "Plugin"
-
-            main_class = getattr(module, main_class_name, None)
-            if not main_class:
+            main_class_name = f"{plugin_name.title()}Plugin"
+            if not hasattr(module, main_class_name):
                 raise ImportError(f"Main class not found: {main_class_name}")
 
             # Create plugin instance
-            plugin_instance = main_class()
-            plugin_instance.initialize(self.config, self.event_bus, self.toolbar)
+            plugin_class = getattr(module, main_class_name)
+            plugin_instance = plugin_class()
 
+            # Initialize plugin
+            plugin_instance.initialize(self.config)
             return plugin_instance
 
         except Exception as e:
             logger.error(f"Error loading plugin {plugin_name}: {str(e)}")
-            logger.exception(e)
+            logger.error(str(e), exc_info=True)
             return None
 
-    def load_plugin(self, plugin_name: str) -> bool:
-        """Load a specific plugin by name"""
-        try:
-            # Check if plugin is already loaded
-            if plugin_name in self.plugins:
-                return True
+    def load_plugins(self):
+        """Load all plugins from plugin directories"""
+        for plugin_dir in self.plugin_dirs:
+            if not os.path.exists(plugin_dir):
+                continue
 
-            # Try loading from plugin directories
-            for plugin_dir in self.plugin_dirs:
-                plugin = self._load_enhanced_plugin(plugin_dir, plugin_name)
+            for item in os.listdir(plugin_dir):
+                if item.startswith("__"):
+                    continue
+
+                plugin = self._load_enhanced_plugin(plugin_dir, item)
                 if plugin:
-                    self.plugins[plugin_name] = plugin
-                    logger.info(f"Loaded plugin: {plugin_name} v{plugin.version}")
-                    return True
+                    self.plugins[item] = plugin
+                    logger.info(f"Loaded plugin: {plugin.name} v{plugin.version}")
+                else:
+                    logger.warning(f"Plugin not found: {item}")
 
-            logger.warning(f"Plugin not found: {plugin_name}")
-            return False
+    def reload_plugins(self):
+        """Reload all plugins"""
+        self.plugins.clear()
+        self.load_plugins()
 
-        except Exception as e:
-            logger.error(f"Error loading plugin {plugin_name}: {str(e)}")
-            logger.exception(e)
-            return False
+    def get_plugin(self, name: str) -> Optional[EnhancedPlugin]:
+        """Get a plugin by name"""
+        return self.plugins.get(name)
 
-    def get_all_plugins(self) -> List[object]:
+    def get_all_plugins(self) -> List[EnhancedPlugin]:
         """Get all loaded plugins"""
         return list(self.plugins.values())
 
-    def get_plugin(self, plugin_name: str) -> Optional[object]:
-        """Get a specific plugin by name"""
-        return self.plugins.get(plugin_name)
-
-    def activate_plugin(self, plugin_name: str) -> bool:
-        """Activate a plugin"""
-        try:
-            plugin = self.get_plugin(plugin_name)
-            if plugin and hasattr(plugin, "activate"):
-                plugin.activate()
-                logger.info(f"Activated plugin: {plugin_name}")
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"Error activating plugin {plugin_name}: {str(e)}")
-            logger.exception(e)
-            return False
-
-    def deactivate_plugin(self, plugin_name: str) -> bool:
-        """Deactivate a plugin"""
-        try:
-            plugin = self.get_plugin(plugin_name)
-            if plugin and hasattr(plugin, "deactivate"):
-                plugin.deactivate()
-                logger.info(f"Deactivated plugin: {plugin_name}")
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"Error deactivating plugin {plugin_name}: {str(e)}")
-            logger.exception(e)
-            return False
-
-    def reload_plugin(self, plugin_name: str) -> bool:
-        """Reload a plugin"""
-        try:
-            if plugin_name in self.plugins:
-                self.deactivate_plugin(plugin_name)
-                del self.plugins[plugin_name]
-            return self.load_plugin(plugin_name)
-        except Exception as e:
-            logger.error(f"Error reloading plugin {plugin_name}: {str(e)}")
-            logger.exception(e)
-            return False
-
-    def load_all_plugins(self):
-        """Load all plugins from plugin directories"""
-        try:
-            for plugin_dir in self.plugin_dirs:
-                if not os.path.exists(plugin_dir):
-                    continue
-                    
-                for item in os.listdir(plugin_dir):
-                    if os.path.isdir(os.path.join(plugin_dir, item)):
-                        self.load_plugin(item)
-        except Exception as e:
-            logger.error(f"Error loading all plugins: {str(e)}")
-            logger.exception(e)
+    def get_active_plugins(self) -> List[EnhancedPlugin]:
+        """Get all active plugins"""
+        return [p for p in self.plugins.values() if p.is_active()]
