@@ -11,6 +11,10 @@ def main():
     tts_plugin = TTSPlugin()
     voice_plugin = VoicePlugin()
     
+    # Position the windows
+    tts_plugin.move(100, 100)
+    voice_plugin.move(100, 250)
+    
     # Show the plugins
     tts_plugin.show()
     voice_plugin.show()

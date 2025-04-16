@@ -1,8 +1,8 @@
 import sys
 from typing import Optional
-from PyQt5.QtWidgets import QApplication, QPushButton, QMenu, QWidget
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QIcon
+from PyQt6.QtWidgets import QApplication, QPushButton, QMenu, QWidget, QMainWindow, QVBoxLayout
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QIcon
 import pyttsx3
 import keyboard
 from ..utils.audio_processing import AudioProcessor, AudioFormat
@@ -27,33 +27,36 @@ class TTSThread(QThread):
             logger.error(f"TTS error: {str(e)}")
             self.error.emit(str(e))
 
-class TTSPlugin:
+class TTSPlugin(QMainWindow):
     """Plugin for text-to-speech functionality"""
     def __init__(self):
+        super().__init__()
         try:
             self.engine = pyttsx3.init()
             self.audio_processor = AudioProcessor()
             self.is_playing = False
             self.tts_thread: Optional[TTSThread] = None
+            self.setup_ui()
             self.setup_shortcut()
-            self.button: Optional[QPushButton] = None
         except Exception as e:
             logger.error(f"Failed to initialize TTS plugin: {str(e)}")
             raise
+    
+    def setup_ui(self):
+        """Set up the user interface"""
+        self.setWindowTitle("Text to Speech")
+        self.setGeometry(100, 100, 200, 100)
         
-    def setup_shortcut(self):
-        """Set up keyboard shortcuts"""
-        try:
-            keyboard.add_hotkey('ctrl+shift+t', self.read_selected_text)
-            logger.info("TTS shortcuts registered successfully")
-        except Exception as e:
-            logger.error(f"Failed to register TTS shortcuts: {str(e)}")
-            
-    def create_button(self, toolbar: QWidget) -> QPushButton:
-        """Create the TTS button with context menu"""
+        # Create central widget and layout
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        layout = QVBoxLayout(central_widget)
+        
+        # Create TTS button
         self.button = QPushButton()
-        self.button.setIcon(QIcon('Toolbar/ui/icons/tts.png'))
+        self.button.setIcon(QIcon('toolbar/ui/icons/tts.png'))
         self.button.setToolTip('Text to Speech (Ctrl+Shift+T)')
+        layout.addWidget(self.button)
         
         # Create context menu
         menu = QMenu()
@@ -65,15 +68,21 @@ class TTSPlugin:
         stop_action.triggered.connect(self.stop)
         settings_action.triggered.connect(self.show_settings)
         
-        self.button.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.button.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.button.customContextMenuRequested.connect(
-            lambda pos: menu.exec_(self.button.mapToGlobal(pos))
+            lambda pos: menu.exec(self.button.mapToGlobal(pos))
         )
         
         self.button.clicked.connect(self.read_selected_text)
         
-        return self.button
-    
+    def setup_shortcut(self):
+        """Set up keyboard shortcuts"""
+        try:
+            keyboard.add_hotkey('ctrl+shift+t', self.read_selected_text)
+            logger.info("TTS shortcuts registered successfully")
+        except Exception as e:
+            logger.error(f"Failed to register TTS shortcuts: {str(e)}")
+            
     def get_selected_text(self) -> str:
         """Get the currently selected text"""
         try:
