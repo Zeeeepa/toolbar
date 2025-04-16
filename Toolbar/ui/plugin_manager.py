@@ -1,31 +1,28 @@
-from typing import Any, Dict, List, Optional
 import logging
+from typing import Any, Dict, List, Optional
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QListWidget, QListWidgetItem
+    QPushButton, QListWidget, QListWidgetItem,
+    QWidget, QCheckBox
 )
-from PyQt5.QtCore import Qt
 
 logger = logging.getLogger(__name__)
 
 class PluginManagerDialog(QDialog):
-    """Dialog for managing toolbar plugins."""
+    """Dialog for managing plugins."""
 
-    def __init__(self, plugin_manager: Any):
-        super().__init__()
-        self.plugin_manager = plugin_manager
+    def __init__(self, parent: Any = None) -> None:
+        super().__init__(parent)
+        self.parent = parent
+        self.plugin_manager = parent.plugin_manager if parent else None
         self.init_ui()
 
     def init_ui(self) -> None:
-        """Initialize the plugin manager dialog UI."""
+        """Initialize the dialog UI."""
         try:
-            # Set dialog properties
             self.setWindowTitle("Plugin Manager")
-            self.setMinimumWidth(400)
-
-            # Create layout
             layout = QVBoxLayout()
-            self.setLayout(layout)
 
             # Add plugin list
             self.plugin_list = QListWidget()
@@ -43,28 +40,76 @@ class PluginManagerDialog(QDialog):
             button_layout.addWidget(close_button)
 
             layout.addLayout(button_layout)
+            self.setLayout(layout)
 
         except Exception as e:
-            logger.error(f"Error initializing plugin manager dialog: {str(e)}")
+            logger.error("Error initializing plugin manager dialog: %s", str(e))
             logger.error(str(e), exc_info=True)
 
     def _load_plugins(self) -> None:
-        """Load and display available plugins."""
+        """Load and display plugins."""
         try:
             self.plugin_list.clear()
+            if not self.plugin_manager:
+                return
+
             for plugin in self.plugin_manager.get_all_plugins():
                 try:
+                    # Create list item widget
                     item = QListWidgetItem()
-                    item.setText(f"{plugin.name} v{plugin.version}")
-                    item.setToolTip(plugin.description)
-                    if plugin.is_active():
-                        item.setCheckState(Qt.Checked)
-                    else:
-                        item.setCheckState(Qt.Unchecked)
                     self.plugin_list.addItem(item)
+
+                    # Create widget for plugin info
+                    widget = QWidget()
+                    layout = QHBoxLayout(widget)
+
+                    # Add plugin name and version
+                    name_label = QLabel(f"{plugin.name} v{plugin.version}")
+                    layout.addWidget(name_label)
+
+                    # Add description
+                    if plugin.description:
+                        desc_label = QLabel(plugin.description)
+                        desc_label.setStyleSheet("color: gray;")
+                        layout.addWidget(desc_label)
+
+                    # Add spacer
+                    layout.addStretch()
+
+                    # Add active checkbox
+                    active_check = QCheckBox("Active")
+                    active_check.setChecked(plugin.is_active)
+                    active_check.stateChanged.connect(
+                        lambda state, p=plugin: self._toggle_plugin(p, state)
+                    )
+                    layout.addWidget(active_check)
+
+                    # Set widget for item
+                    item.setSizeHint(widget.sizeHint())
+                    self.plugin_list.setItemWidget(item, widget)
+
                 except Exception as e:
-                    logger.error(f"Error adding plugin {plugin.name} to list: {str(e)}")
+                    logger.error("Error adding plugin %s: %s", plugin.name, str(e))
                     logger.error(str(e), exc_info=True)
+
         except Exception as e:
-            logger.error(f"Error loading plugins: {str(e)}")
+            logger.error("Error loading plugins: %s", str(e))
+            logger.error(str(e), exc_info=True)
+
+    def _toggle_plugin(self, plugin: Any, state: int) -> None:
+        """Toggle a plugin's active state."""
+        try:
+            if state == Qt.Checked:
+                plugin.initialize(self.plugin_manager.config,
+                                self.plugin_manager.event_bus,
+                                self.plugin_manager.toolbar)
+            else:
+                plugin._active = False
+
+            # Update parent toolbar
+            if self.parent:
+                self.parent.init_ui()
+
+        except Exception as e:
+            logger.error("Error toggling plugin %s: %s", plugin.name, str(e))
             logger.error(str(e), exc_info=True)
