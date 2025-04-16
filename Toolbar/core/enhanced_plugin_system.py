@@ -71,6 +71,7 @@ class PluginLocation:
 class EnhancedPluginManifest(PluginManifest):
     """Enhanced class representing a plugin manifest with additional fields."""
     # Add new fields
+    main_class: str  # Move main_class to the top as a required parameter
     plugin_type: Union[PluginType, ExtendedPluginType] = PluginType.OTHER
     icon_path: Optional[str] = None
     settings_ui_class: Optional[str] = None
@@ -110,8 +111,8 @@ class EnhancedPluginManifest(PluginManifest):
             version=data.get("version"),
             description=data.get("description", ""),
             author=data.get("author", ""),
-            plugin_type=plugin_type,
             main_class=data.get("main_class"),
+            plugin_type=plugin_type,
             dependencies=dependencies,
             min_toolbar_version=data.get("min_toolbar_version", "1.0.0"),
             max_toolbar_version=data.get("max_toolbar_version", "*"),
