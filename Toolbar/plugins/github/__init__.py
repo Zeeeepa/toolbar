@@ -74,16 +74,15 @@ class GitHubPlugin(Plugin):
     
     @property
     def name(self):
+        """Get the plugin name."""
         return self._name
 
-    @name.setter
-    def name(self, value):
-        self._name = value
-
     def get_icon(self):
+        """Get the plugin icon."""
         if not self._icon:
             # Return QIcon object instead of string path
-            self._icon = QIcon("Toolbar/plugins/github/assets/github.png")
+            icon_path = os.path.join(os.path.dirname(__file__), "assets", "github.png")
+            self._icon = QIcon(icon_path)
         return self._icon
     
     def get_title(self):
