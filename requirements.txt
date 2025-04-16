@@ -9,9 +9,11 @@ appdirs>=1.4.4
 
 # Voice plugin dependencies
 pyttsx3>=2.90
-vosk>=0.3.45
-sounddevice>=0.4.6
-numpy>=1.21.0
+SpeechRecognition>=3.8.1
+pyperclip>=1.8.2
+pyautogui>=0.9.53
+keyboard>=0.13.5
+
 # Text-to-speech requirements
 pyttsx3>=2.90
 keyboard>=0.13.5
