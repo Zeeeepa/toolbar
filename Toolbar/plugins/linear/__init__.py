@@ -3,45 +3,40 @@ Linear integration plugin for the Toolbar application.
 """
 
 from PyQt5.QtGui import QIcon
-from Toolbar.core.plugin_system import Plugin
+from PyQt5.QtWidgets import QWidget
 
-class LinearPlugin(Plugin):
+class LinearPlugin:
     """Linear integration plugin."""
     
     def __init__(self):
-        super().__init__()
         self._name = "Linear Integration"
-        self._description = "Integrates with Linear for issue tracking"
-        self._version = "1.0.0"
         self._icon = None
+        self._config = None
+        self._event_bus = None
+        self._toolbar = None
     
     @property
     def name(self):
         return self._name
     
-    @name.setter
-    def name(self, value):
-        self._name = value
-    
     def get_icon(self):
-        if not self._icon:
-            # Return QIcon object instead of string path
-            self._icon = QIcon("Toolbar/plugins/linear/assets/linear.png")
-        return self._icon
+        return self._icon or QIcon()
     
-    def initialize(self, config):
+    def initialize(self, config, event_bus, toolbar):
         """Initialize the Linear plugin."""
+        self._config = config
+        self._event_bus = event_bus
+        self._toolbar = toolbar
+        # Initialize Linear client and handlers
         try:
-            from .linear_integration import LinearIntegration
-            self.integration = LinearIntegration(config)
-            return True
+            from .linear_client import setup_linear_client
+            setup_linear_client(self._event_bus)
         except ImportError:
-            return False
+            print("Could not initialize Linear client")
     
     def cleanup(self):
         """Clean up Linear plugin resources."""
-        if self.integration:
-            self.integration.cleanup()
+        pass
     
     @property
     def version(self) -> str:
