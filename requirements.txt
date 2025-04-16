@@ -6,3 +6,9 @@ keyboard>=0.13.0
 pyperclip>=1.8.0
 python-dotenv>=0.15.0
 appdirs>=1.4.4
+
+# Voice plugin dependencies
+pyttsx3>=2.90
+vosk>=0.3.45
+sounddevice>=0.4.6
+numpy>=1.21.0
