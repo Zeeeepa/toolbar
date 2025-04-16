@@ -15,7 +15,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "start_toolbar=toolbar.main:main",
+            "start_toolbar=toolbar:main",  # Updated entry point
         ],
     },
     python_requires=">=3.8",
