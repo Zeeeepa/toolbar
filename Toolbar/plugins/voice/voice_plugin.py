@@ -1,110 +1,182 @@
-import threading
-import queue
-import sounddevice as sd
-import numpy as np
-import vosk
+import tkinter as tk
+from tkinter import ttk
 import pyttsx3
-from PyQt5.QtWidgets import QWidget, QPushButton, QVBoxLayout, QHBoxLayout, QApplication
-from PyQt5.QtCore import Qt, pyqtSignal, QThread
+import speech_recognition as sr
+import threading
+import keyboard
+from typing import Callable, Optional
+import pyperclip
+import pyautogui
 
-class VoiceRecognitionThread(QThread):
-    text_received = pyqtSignal(str)
-    
-    def __init__(self, sample_rate=16000):
-        super().__init__()
-        self.sample_rate = sample_rate
-        self.running = False
-        self.q = queue.Queue()
+class VoiceWidget:
+    def __init__(self, root: tk.Tk):
+        self.root = root
+        self.frame = ttk.Frame(root)
+        self.frame.pack(side=tk.TOP, fill=tk.X)
         
-        # Initialize Vosk model
-        model = vosk.Model(lang="en-us")
-        self.recognizer = vosk.KaldiRecognizer(model, self.sample_rate)
-        
-    def callback(self, indata, frames, time, status):
-        if status:
-            print(status)
-        self.q.put(bytes(indata))
-        
-    def run(self):
-        self.running = True
-        with sd.RawInputStream(samplerate=self.sample_rate, blocksize=8000,
-                             dtype="int16", channels=1, callback=self.callback):
-            while self.running:
-                data = self.q.get()
-                if self.recognizer.AcceptWaveform(data):
-                    result = self.recognizer.Result()
-                    text = eval(result)["text"]
-                    if text:
-                        self.text_received.emit(text)
-                        
-    def stop(self):
-        self.running = False
-
-class VoiceWidget(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.init_ui()
-        self.init_tts()
-        self.init_stt()
-        
-    def init_ui(self):
-        layout = QVBoxLayout()
-        
-        # TTS controls
-        tts_layout = QHBoxLayout()
-        self.play_btn = QPushButton("🔊 Read Selected")
-        self.play_btn.clicked.connect(self.read_selected)
-        self.stop_btn = QPushButton("⏹️ Stop")
-        self.stop_btn.clicked.connect(self.stop_reading)
-        tts_layout.addWidget(self.play_btn)
-        tts_layout.addWidget(self.stop_btn)
-        
-        # STT controls
-        stt_layout = QHBoxLayout()
-        self.record_btn = QPushButton("🎤 Start Dictation")
-        self.record_btn.setCheckable(True)
-        self.record_btn.clicked.connect(self.toggle_recording)
-        stt_layout.addWidget(self.record_btn)
-        
-        layout.addLayout(tts_layout)
-        layout.addLayout(stt_layout)
-        self.setLayout(layout)
-        
-    def init_tts(self):
+        # Initialize engines
         self.engine = pyttsx3.init()
-        self.engine.setProperty('rate', 150)
+        self.recognizer = sr.Recognizer()
         
-    def init_stt(self):
-        self.stt_thread = VoiceRecognitionThread()
-        self.stt_thread.text_received.connect(self.handle_recognized_text)
+        # State variables
+        self.is_listening = False
+        self.is_speaking = False
         
-    def read_selected(self):
-        # Get selected text from clipboard
-        clipboard = QApplication.clipboard()
-        text = clipboard.text()
-        if text:
-            self.engine.say(text)
-            self.engine.runAndWait()
+        # Create and style buttons
+        self.create_buttons()
+        self.setup_styles()
+        
+        # Configure keyboard shortcuts
+        keyboard.add_hotkey('ctrl+shift+s', self.toggle_speech_to_text)
+        keyboard.add_hotkey('ctrl+shift+t', self.start_text_to_speech)
+        
+    def setup_styles(self):
+        style = ttk.Style()
+        style.configure('Icon.TButton', padding=2)
+        style.configure('Active.TButton',
+                       background='#007AFF',
+                       foreground='white')
+    
+    def create_buttons(self):
+        # Settings button
+        self.settings_btn = ttk.Button(
+            self.frame,
+            text="⚙️",
+            width=3,
+            style='Icon.TButton',
+            command=self.show_settings
+        )
+        self.settings_btn.pack(side=tk.LEFT, padx=2)
+        
+        # Speech-to-text button
+        self.stt_btn = ttk.Button(
+            self.frame,
+            text="🎤",
+            width=3,
+            style='Icon.TButton',
+            command=self.toggle_speech_to_text
+        )
+        self.stt_btn.pack(side=tk.LEFT, padx=2)
+        
+        # Text-to-speech button
+        self.tts_btn = ttk.Button(
+            self.frame,
+            text="🔊",
+            width=3,
+            style='Icon.TButton',
+            command=self.start_text_to_speech
+        )
+        self.tts_btn.pack(side=tk.LEFT, padx=2)
+    
+    def show_settings(self):
+        settings = tk.Toplevel(self.root)
+        settings.title("Voice Settings")
+        settings.geometry("300x250")
+        
+        # Voice selection
+        ttk.Label(settings, text="Voice:").pack(pady=5)
+        voices = self.engine.getProperty('voices')
+        voice_var = tk.StringVar(value=voices[0].id)
+        voice_menu = ttk.Combobox(settings, textvariable=voice_var)
+        voice_menu['values'] = [v.id for v in voices]
+        voice_menu.pack(pady=5)
+        
+        # Speed control
+        ttk.Label(settings, text="Speed:").pack(pady=5)
+        speed_var = tk.IntVar(value=self.engine.getProperty('rate'))
+        speed_scale = ttk.Scale(settings, from_=100, to=300, variable=speed_var)
+        speed_scale.pack(pady=5)
+        
+        # Microphone selection
+        ttk.Label(settings, text="Microphone:").pack(pady=5)
+        mics = sr.Microphone.list_microphone_names()
+        mic_var = tk.StringVar(value=mics[0])
+        mic_menu = ttk.Combobox(settings, textvariable=mic_var)
+        mic_menu['values'] = mics
+        mic_menu.pack(pady=5)
+        
+        def apply_settings():
+            self.engine.setProperty('voice', voice_var.get())
+            self.engine.setProperty('rate', speed_var.get())
+            settings.destroy()
             
-    def stop_reading(self):
-        self.engine.stop()
-        
-    def toggle_recording(self, checked):
-        if checked:
-            self.record_btn.setText("⏺️ Stop Dictation")
-            self.stt_thread.start()
+        ttk.Button(settings, text="Apply", command=apply_settings).pack(pady=10)
+    
+    def toggle_speech_to_text(self):
+        if self.is_listening:
+            self.stop_listening()
         else:
-            self.record_btn.setText("🎤 Start Dictation")
-            self.stt_thread.stop()
-            self.stt_thread.wait()
-            
-    def handle_recognized_text(self, text):
-        # Insert recognized text at cursor position
-        focused_widget = QApplication.focusWidget()
-        if hasattr(focused_widget, 'insertPlainText'):
-            focused_widget.insertPlainText(text + " ")
-            
-    def closeEvent(self, event):
-        self.stt_thread.stop()
-        self.stt_thread.wait()
-        super().closeEvent(event)
+            self.start_listening()
+    
+    def start_listening(self):
+        self.is_listening = True
+        self.stt_btn.configure(style='Active.TButton')
+        
+        def listen_thread():
+            with sr.Microphone() as source:
+                # Adjust for ambient noise
+                self.recognizer.adjust_for_ambient_noise(source)
+                
+                while self.is_listening:
+                    try:
+                        audio = self.recognizer.listen(source, timeout=1)
+                        text = self.recognizer.recognize_google(audio)
+                        
+                        # Simulate typing the recognized text
+                        self.root.after(0, lambda: self.type_text(text))
+                        
+                    except sr.WaitTimeoutError:
+                        continue
+                    except Exception as e:
+                        print(f"Error in speech recognition: {e}")
+        
+        threading.Thread(target=listen_thread, daemon=True).start()
+    
+    def stop_listening(self):
+        self.is_listening = False
+        self.stt_btn.configure(style='Icon.TButton')
+    
+    def start_text_to_speech(self):
+        if self.is_speaking:
+            self.stop_speaking()
+            return
+        
+        # Get selected text using clipboard
+        previous_clipboard = pyperclip.paste()
+        pyautogui.hotkey('ctrl', 'c')
+        selected_text = pyperclip.paste()
+        pyperclip.copy(previous_clipboard)
+        
+        if not selected_text or selected_text == previous_clipboard:
+            return
+        
+        self.is_speaking = True
+        self.tts_btn.configure(style='Active.TButton')
+        
+        def speak_thread():
+            self.engine.say(selected_text)
+            self.engine.runAndWait()
+            self.root.after(0, self.stop_speaking)
+        
+        threading.Thread(target=speak_thread, daemon=True).start()
+    
+    def stop_speaking(self):
+        self.is_speaking = False
+        self.engine.stop()
+        self.tts_btn.configure(style='Icon.TButton')
+    
+    def type_text(self, text: str):
+        """Type the recognized text at the current cursor position"""
+        pyautogui.write(text + ' ')
+
+class VoicePlugin:
+    def __init__(self):
+        self.widget = None
+    
+    def initialize(self, root: tk.Tk):
+        self.widget = VoiceWidget(root)
+    
+    def cleanup(self):
+        if self.widget:
+            self.widget.frame.destroy()
+            self.widget = None
