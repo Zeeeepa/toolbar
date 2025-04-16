@@ -21,7 +21,8 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "toolbar=Toolbar.cli:cli_main",
+            "toolbar=Toolbar.main:main",
+            "toolbar-close=Toolbar.main:close_gracefully"
         ],
     },
     classifiers=[

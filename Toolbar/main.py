@@ -465,6 +465,15 @@ def force_show_toolbar(toolbar):
     except Exception as e:
         logger.error(f"Error in force_show_toolbar: {e}", exc_info=True)
 
+def close_gracefully():
+    import sys
+    from PyQt5.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    if app:
+        app.quit()
+    sys.exit(0)
+
 def main():
     """
     Main entry point for the Toolbar application.
