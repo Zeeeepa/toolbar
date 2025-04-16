@@ -33,17 +33,16 @@ class EventsPlugin(Plugin):
     
     def __init__(self):
         """Initialize the Events plugin."""
-        self.event_manager = None
-        self.events_ui = None
-        self.github_events = None
-        self.linear_events = None
-    
-    def initialize(self, config):
+        super().__init__()
+
+    def initialize(self, config, event_bus, toolbar):
         """
         Initialize the Events plugin.
         
         Args:
             config: Application configuration
+            event_bus: Event bus for communication
+            toolbar: Toolbar widget for integration
             
         Returns:
             bool: True if initialization was successful, False otherwise

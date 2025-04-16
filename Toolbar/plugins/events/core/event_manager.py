@@ -31,7 +31,8 @@ class EventManager(BaseEventManager):
         """Register additional action handlers."""
         try:
             # Import handlers from other plugins
-            from Toolbar.plugins.github.github.pr_handler import PRHandler
+            from Toolbar.plugins.github.pr_handler import PRHandler
+            from Toolbar.plugins.linear.linear_client import LinearClient
             from Toolbar.main import get_plugin_instance
             
             # Get GitHub plugin
