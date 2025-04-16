@@ -3,50 +3,26 @@ Linear integration plugin for the Toolbar application.
 """
 
 from PyQt5.QtGui import QIcon
-from Toolbar.core.plugin_system import Plugin
+from Toolbar.core.plugin_system import Plugin, PluginType
 
 class LinearPlugin(Plugin):
-    """Linear integration plugin."""
+    """Plugin for Linear integration."""
     
     def __init__(self):
         super().__init__()
         self._name = "Linear Integration"
-        self._description = "Integrates with Linear for issue tracking"
         self._version = "1.0.0"
-        self._icon = None
+        self._description = "Linear integration and notifications"
     
-    @property
-    def name(self):
-        return self._name
-    
-    @name.setter
-    def name(self, value):
-        self._name = value
+    def initialize(self, config, event_bus=None, toolbar=None):
+        """Initialize the plugin."""
+        super().initialize(config, event_bus, toolbar)
+        return True
     
     def get_icon(self):
-        if not self._icon:
-            # Return QIcon object instead of string path
-            self._icon = QIcon("Toolbar/plugins/linear/assets/linear.png")
-        return self._icon
+        """Get the plugin icon."""
+        return QIcon.fromTheme("linear")
     
-    def initialize(self, config):
-        """Initialize the Linear plugin."""
-        try:
-            from .linear_integration import LinearIntegration
-            self.integration = LinearIntegration(config)
-            return True
-        except ImportError:
-            return False
-    
-    def cleanup(self):
-        """Clean up Linear plugin resources."""
-        if self.integration:
-            self.integration.cleanup()
-    
-    @property
-    def version(self) -> str:
-        return "1.0.0"
-    
-    @property
-    def description(self) -> str:
-        return "Provides Linear issue tracking and project management integration."
+    def get_title(self):
+        """Get the plugin title."""
+        return "Linear"
