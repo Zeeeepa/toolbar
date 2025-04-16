@@ -2,31 +2,46 @@
 Linear integration plugin for the Toolbar application.
 """
 
+from PyQt5.QtGui import QIcon
 from Toolbar.core.plugin_system import Plugin
-from .linear_integration import LinearIntegration
 
 class LinearPlugin(Plugin):
     """Linear integration plugin."""
     
     def __init__(self):
-        self.integration = None
+        super().__init__()
+        self._name = "Linear Integration"
+        self._description = "Integrates with Linear for issue tracking"
+        self._version = "1.0.0"
+        self._icon = None
+    
+    @property
+    def name(self):
+        return self._name
+    
+    @name.setter
+    def name(self, value):
+        self._name = value
+    
+    def get_icon(self):
+        if not self._icon:
+            # Return QIcon object instead of string path
+            self._icon = QIcon("Toolbar/plugins/linear/assets/linear.png")
+        return self._icon
     
     def initialize(self, config):
         """Initialize the Linear plugin."""
         try:
-            # Initialize Linear integration
+            from .linear_integration import LinearIntegration
             self.integration = LinearIntegration(config)
-        except Exception as e:
-            print(f"Failed to initialize Linear plugin: {e}")
+            return True
+        except ImportError:
+            return False
     
     def cleanup(self):
         """Clean up Linear plugin resources."""
         if self.integration:
             self.integration.cleanup()
-    
-    @property
-    def name(self) -> str:
-        return "Linear Integration"
     
     @property
     def version(self) -> str:

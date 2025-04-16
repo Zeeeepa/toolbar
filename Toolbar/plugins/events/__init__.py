@@ -14,6 +14,7 @@ import threading
 import time
 from typing import Dict, List, Any, Optional, Type, Callable, Set, Union, Tuple
 from PyQt5.QtCore import QObject, pyqtSignal
+from PyQt5.QtGui import QIcon
 
 # Import plugin system
 from Toolbar.core.plugin_system import Plugin
@@ -34,6 +35,24 @@ class EventsPlugin(Plugin):
     def __init__(self):
         """Initialize the Events plugin."""
         super().__init__()
+        self._name = "Events"
+        self._description = "Handles system and application events"
+        self._version = "1.0.0"
+        self._icon = None
+
+    @property
+    def name(self):
+        return self._name
+
+    @name.setter
+    def name(self, value):
+        self._name = value
+
+    def get_icon(self):
+        if not self._icon:
+            # Return QIcon object instead of string path
+            self._icon = QIcon("Toolbar/plugins/events/assets/events.png")
+        return self._icon
 
     def initialize(self, config, event_bus, toolbar):
         """
@@ -196,11 +215,6 @@ class EventsPlugin(Plugin):
         except Exception as e:
             logger.warning(f"Error triggering Linear issue closed event: {e}")
     
-    def get_icon(self):
-        """Get the icon for the plugin to display in the taskbar."""
-        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons", "events.svg")
-        return icon_path
-    
     def get_toolbar_widget(self):
         """Get the toolbar widget for the plugin."""
         if self.events_ui:
@@ -216,10 +230,6 @@ class EventsPlugin(Plugin):
         """Clean up plugin resources."""
         if self.event_manager:
             self.event_manager.cleanup()
-    
-    @property
-    def name(self) -> str:
-        return "Events"
     
     @property
     def version(self) -> str:

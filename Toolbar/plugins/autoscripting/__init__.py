@@ -16,6 +16,7 @@ from PyQt5.QtWidgets import QWidget
 
 # Import from Toolbar core
 from Toolbar.core.enhanced_plugin_system import ScriptingPlugin, EnhancedPlugin
+from Toolbar.core.plugin_system import Plugin
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +198,7 @@ class ScriptManager:
         
         return script.run(globals_dict, locals_dict)
 
-class AutoScriptingPlugin(ScriptingPlugin):
+class AutoScriptingPlugin(Plugin):
     """Plugin for automation scripting."""
     
     def __init__(self):

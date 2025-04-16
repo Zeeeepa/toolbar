@@ -21,9 +21,10 @@ class GitHubPlugin(Plugin):
     def __init__(self):
         """Initialize the GitHub plugin."""
         super().__init__()
-        self.name = "GitHub Integration"
-        self.description = "Integrates with GitHub to monitor repositories and provide notifications."
-        self.version = "1.0.0"
+        self._name = "GitHub Integration"
+        self._description = "Integrates with GitHub for repository management"
+        self._version = "1.0.0"
+        self._icon = None
         self.github_manager = None
         self.github_ui = None
         self.toolbar_button = None
@@ -71,12 +72,19 @@ class GitHubPlugin(Plugin):
         
         return True
     
+    @property
+    def name(self):
+        return self._name
+
+    @name.setter
+    def name(self, value):
+        self._name = value
+
     def get_icon(self):
-        """Get the icon for the plugin to display in the taskbar."""
-        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons", "github.svg")
-        if os.path.exists(icon_path):
-            return QIcon(icon_path)
-        return QIcon.fromTheme("github")
+        if not self._icon:
+            # Return QIcon object instead of string path
+            self._icon = QIcon("Toolbar/plugins/github/assets/github.png")
+        return self._icon
     
     def get_title(self):
         """Get the title for the plugin to display in the taskbar."""
