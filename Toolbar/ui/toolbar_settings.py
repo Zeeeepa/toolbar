@@ -2,7 +2,7 @@
 import os
 import sys
 import logging
-from typing import Dict, List, Any, Optional
+from typing import Any, Dict, List, Optional
 
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
@@ -13,123 +13,119 @@ from PyQt5.QtCore import Qt
 logger = logging.getLogger(__name__)
 
 class SettingsDialog(QDialog):
-    """Settings dialog for toolbar configuration"""
-    def __init__(self, config):
+    """Dialog for toolbar settings."""
+
+    def __init__(self, config: Any):
         super().__init__()
         self.config = config
         self.init_ui()
 
-    def init_ui(self):
-        """Initialize dialog UI"""
+    def init_ui(self) -> None:
+        """Initialize the settings dialog UI."""
         try:
+            # Set dialog properties
             self.setWindowTitle("Toolbar Settings")
-            layout = QVBoxLayout()
+            self.setMinimumWidth(400)
 
-            # Add settings controls
-            self.add_general_settings(layout)
-            self.add_plugin_settings(layout)
-            self.add_notification_settings(layout)
+            # Create layout
+            layout = QVBoxLayout()
+            self.setLayout(layout)
+
+            # Add settings sections
+            self._add_general_settings(layout)
+            self._add_appearance_settings(layout)
+            self._add_plugin_settings(layout)
 
             # Add buttons
             button_layout = QHBoxLayout()
             save_button = QPushButton("Save")
             save_button.clicked.connect(self.save_settings)
+            button_layout.addWidget(save_button)
+
             cancel_button = QPushButton("Cancel")
             cancel_button.clicked.connect(self.reject)
-            button_layout.addWidget(save_button)
             button_layout.addWidget(cancel_button)
+
             layout.addLayout(button_layout)
 
-            self.setLayout(layout)
-
         except Exception as e:
-            logger.error("Error initializing settings dialog: %s", str(e))
+            logger.error(f"Error initializing settings dialog: {str(e)}")
             logger.error(str(e), exc_info=True)
 
-    def add_general_settings(self, layout):
-        """Add general settings section"""
+    def _add_general_settings(self, layout: Any) -> None:
+        """Add general settings section."""
         try:
-            # Add section label
+            # General settings group
             layout.addWidget(QLabel("<b>General Settings</b>"))
 
-            # Add startup checkbox
-            self.startup_checkbox = QCheckBox("Start with Windows")
-            self.startup_checkbox.setChecked(getattr(self.config, "start_with_windows", False))
-            layout.addWidget(self.startup_checkbox)
+            # Auto-start setting
+            autostart = QCheckBox("Start with system")
+            autostart.setChecked(self.config.get("autostart", False))
+            layout.addWidget(autostart)
 
-            # Add position settings
+            # Position setting
             position_layout = QHBoxLayout()
-            position_layout.addWidget(QLabel("Screen Position:"))
-            self.position_spinbox = QSpinBox()
-            self.position_spinbox.setRange(0, 100)
-            self.position_spinbox.setValue(getattr(self.config, "screen_position", 0))
-            position_layout.addWidget(self.position_spinbox)
+            position_layout.addWidget(QLabel("Screen position:"))
+            position_combo = QLineEdit()
+            position_combo.setText(self.config.get("position", "bottom"))
+            position_layout.addWidget(position_combo)
             layout.addLayout(position_layout)
 
         except Exception as e:
-            logger.error("Error adding general settings: %s", str(e))
+            logger.error(f"Error adding general settings: {str(e)}")
             logger.error(str(e), exc_info=True)
 
-    def add_plugin_settings(self, layout):
-        """Add plugin settings section"""
+    def _add_appearance_settings(self, layout: Any) -> None:
+        """Add appearance settings section."""
         try:
-            # Add section label
+            # Appearance settings group
+            layout.addWidget(QLabel("<b>Appearance</b>"))
+
+            # Opacity setting
+            opacity_layout = QHBoxLayout()
+            opacity_layout.addWidget(QLabel("Opacity:"))
+            opacity_spin = QSpinBox()
+            opacity_spin.setRange(50, 100)
+            opacity_spin.setValue(int(self.config.get("opacity", 90)))
+            opacity_layout.addWidget(opacity_spin)
+            layout.addLayout(opacity_layout)
+
+            # Theme setting
+            theme_layout = QHBoxLayout()
+            theme_layout.addWidget(QLabel("Theme:"))
+            theme_combo = QLineEdit()
+            theme_combo.setText(self.config.get("theme", "dark"))
+            theme_layout.addWidget(theme_combo)
+            layout.addLayout(theme_layout)
+
+        except Exception as e:
+            logger.error(f"Error adding appearance settings: {str(e)}")
+            logger.error(str(e), exc_info=True)
+
+    def _add_plugin_settings(self, layout: Any) -> None:
+        """Add plugin settings section."""
+        try:
+            # Plugin settings group
             layout.addWidget(QLabel("<b>Plugin Settings</b>"))
 
-            # Add plugin directory
-            plugin_layout = QHBoxLayout()
-            plugin_layout.addWidget(QLabel("Plugin Directory:"))
-            self.plugin_dir_edit = QLineEdit()
-            self.plugin_dir_edit.setText(getattr(self.config, "plugin_dir", ""))
-            plugin_layout.addWidget(self.plugin_dir_edit)
-            layout.addLayout(plugin_layout)
+            # Plugin directory setting
+            plugin_dir_layout = QHBoxLayout()
+            plugin_dir_layout.addWidget(QLabel("Plugin directory:"))
+            plugin_dir_edit = QLineEdit()
+            plugin_dir_edit.setText(self.config.get("plugin_dir", ""))
+            plugin_dir_layout.addWidget(plugin_dir_edit)
+            layout.addLayout(plugin_dir_layout)
 
         except Exception as e:
-            logger.error("Error adding plugin settings: %s", str(e))
+            logger.error(f"Error adding plugin settings: {str(e)}")
             logger.error(str(e), exc_info=True)
 
-    def add_notification_settings(self, layout):
-        """Add notification settings section"""
+    def save_settings(self) -> None:
+        """Save the settings and close the dialog."""
         try:
-            # Add section label
-            layout.addWidget(QLabel("<b>Notification Settings</b>"))
-
-            # Add notification checkbox
-            self.notification_checkbox = QCheckBox("Enable Notifications")
-            self.notification_checkbox.setChecked(getattr(self.config, "notifications_enabled", True))
-            layout.addWidget(self.notification_checkbox)
-
-            # Add notification duration
-            duration_layout = QHBoxLayout()
-            duration_layout.addWidget(QLabel("Notification Duration (seconds):"))
-            self.duration_spinbox = QSpinBox()
-            self.duration_spinbox.setRange(1, 60)
-            self.duration_spinbox.setValue(getattr(self.config, "notification_duration", 5))
-            duration_layout.addWidget(self.duration_spinbox)
-            layout.addLayout(duration_layout)
-
-        except Exception as e:
-            logger.error("Error adding notification settings: %s", str(e))
-            logger.error(str(e), exc_info=True)
-
-    def save_settings(self):
-        """Save settings to configuration"""
-        try:
-            # Save general settings
-            self.config.start_with_windows = self.startup_checkbox.isChecked()
-            self.config.screen_position = self.position_spinbox.value()
-
-            # Save plugin settings
-            self.config.plugin_dir = self.plugin_dir_edit.text()
-
-            # Save notification settings
-            self.config.notifications_enabled = self.notification_checkbox.isChecked()
-            self.config.notification_duration = self.duration_spinbox.value()
-
-            # Save configuration
+            # Save settings to config
             self.config.save()
             self.accept()
-
         except Exception as e:
-            logger.error("Error saving settings: %s", str(e))
+            logger.error(f"Error saving settings: {str(e)}")
             logger.error(str(e), exc_info=True)
