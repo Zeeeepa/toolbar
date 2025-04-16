@@ -12,7 +12,7 @@ class PluginButton(QPushButton):
         self.setFixedSize(40, 40)
         self.setToolTip(plugin.name)
         
-        # Handle icon loading
+        # Handle icon setting
         icon = plugin.get_icon()
         if isinstance(icon, str):
             # If icon is a string path, convert to QIcon
@@ -20,35 +20,27 @@ class PluginButton(QPushButton):
         elif isinstance(icon, QIcon):
             # If already a QIcon, use directly
             self.setIcon(icon)
-        else:
-            # Default icon if none provided
-            self.setText(plugin.name[0])
-            
-        self.setIconSize(self.size() * 0.7)
         
-        # Style the button
+        # Set button style
         self.setStyleSheet("""
             QPushButton {
-                background-color: #2d2d2d;
+                background-color: transparent;
                 border: none;
-                border-radius: 5px;
                 padding: 5px;
-                margin: 2px;
             }
             QPushButton:hover {
-                background-color: #3d3d3d;
+                background-color: rgba(255, 255, 255, 0.1);
+                border-radius: 5px;
             }
             QPushButton:pressed {
-                background-color: #1d1d1d;
+                background-color: rgba(255, 255, 255, 0.2);
             }
         """)
         
         # Connect click handler
-        self.clicked.connect(self._handle_click)
-        
-    def _handle_click(self):
+        self.clicked.connect(self.handle_click)
+    
+    def handle_click(self):
         """Handle button click by activating the plugin"""
-        try:
+        if hasattr(self.plugin, 'activate'):
             self.plugin.activate()
-        except Exception as e:
-            print(f"Error activating plugin {self.plugin.name}: {e}")
