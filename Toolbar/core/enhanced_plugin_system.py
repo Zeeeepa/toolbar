@@ -70,9 +70,20 @@ class PluginLocation:
 @dataclass
 class EnhancedPluginManifest(PluginManifest):
     """Enhanced class representing a plugin manifest with additional fields."""
-    # Add new fields
-    main_class: str  # Move main_class to the top as a required parameter
-    plugin_type: Union[PluginType, ExtendedPluginType] = PluginType.OTHER
+    # Required parameters must come first (inherited from PluginManifest)
+    id: str
+    name: str
+    version: str
+    description: str
+    author: str
+    plugin_type: Union[PluginType, ExtendedPluginType]
+    main_class: str
+    # Optional parameters with default values
+    dependencies: List[PluginDependency] = None
+    min_toolbar_version: str = "1.0.0"
+    max_toolbar_version: str = "*"
+    settings_schema: Dict[str, Any] = None
+    # Additional fields specific to EnhancedPluginManifest
     icon_path: Optional[str] = None
     settings_ui_class: Optional[str] = None
     website: Optional[str] = None
@@ -111,8 +122,8 @@ class EnhancedPluginManifest(PluginManifest):
             version=data.get("version"),
             description=data.get("description", ""),
             author=data.get("author", ""),
-            main_class=data.get("main_class"),
             plugin_type=plugin_type,
+            main_class=data.get("main_class"),
             dependencies=dependencies,
             min_toolbar_version=data.get("min_toolbar_version", "1.0.0"),
             max_toolbar_version=data.get("max_toolbar_version", "*"),
