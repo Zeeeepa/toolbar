@@ -111,8 +111,8 @@ class ToolbarUI(QMainWindow):
         self.setWindowTitle("Toolbar")
         
         # Get position and opacity from config
-        self.position = self.config.get_setting("ui.position", "top")
-        self.opacity = float(self.config.get_setting("ui.opacity", 0.9))
+        self.position = self.config.get_setting("ui.position", "bottom")  # Default to bottom like Windows taskbar
+        self.opacity = float(self.config.get_setting("ui.opacity", 1.0))  # Default to fully opaque
         self.stay_on_top = self.config.get_setting("ui.stay_on_top", True)
         
         # Set window flags based on configuration
@@ -125,6 +125,12 @@ class ToolbarUI(QMainWindow):
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         
+        # Set the background color to match Windows taskbar
+        palette = self.palette()
+        palette.setColor(QPalette.Window, QColor(32, 32, 32))  # Dark gray like Windows taskbar
+        palette.setColor(QPalette.WindowText, QColor(255, 255, 255))  # White text
+        self.setPalette(palette)
+        
         # Create main layout based on position
         self._create_layout()
         
@@ -133,6 +139,29 @@ class ToolbarUI(QMainWindow):
         self.toolbar.setMovable(False)
         self.toolbar.setFloatable(False)
         self.toolbar.setIconSize(QSize(24, 24))
+        
+        # Style the toolbar to match Windows taskbar
+        self.toolbar.setStyleSheet("""
+            QToolBar {
+                background-color: #202020;
+                border: none;
+                spacing: 4px;
+                padding: 2px;
+            }
+            QToolButton {
+                background-color: transparent;
+                border: none;
+                border-radius: 4px;
+                color: white;
+                padding: 4px;
+            }
+            QToolButton:hover {
+                background-color: rgba(255, 255, 255, 0.1);
+            }
+            QToolButton:pressed {
+                background-color: rgba(255, 255, 255, 0.2);
+            }
+        """)
         
         # Add toolbar to appropriate position
         if self.position in ['top', 'bottom']:
@@ -144,6 +173,18 @@ class ToolbarUI(QMainWindow):
         self.status_bar = self.statusBar()
         self.status_label = QLabel("Ready")
         self.status_bar.addWidget(self.status_label)
+        
+        # Style the status bar
+        self.status_bar.setStyleSheet("""
+            QStatusBar {
+                background-color: #202020;
+                color: white;
+                border: none;
+            }
+            QLabel {
+                color: white;
+            }
+        """)
         
         # Initialize UI components
         self._init_ui()
@@ -164,10 +205,10 @@ class ToolbarUI(QMainWindow):
             self._create_tray_icon()
         
         logger.info("Toolbar initialized")
-    
+
     def _update_window_flags(self):
         """Update window flags based on configuration."""
-        flags = Qt.Tool  # Base flag for toolbar-like window
+        flags = Qt.Tool | Qt.FramelessWindowHint  # Base flags for toolbar-like window
         
         if self.stay_on_top:
             flags |= Qt.WindowStaysOnTopHint
@@ -260,26 +301,25 @@ class ToolbarUI(QMainWindow):
             # Get screen geometry
             screen = QDesktopWidget().screenGeometry()
             
-            # Calculate position based on configuration
-            if self.position == "top":
-                x = (screen.width() - self.width()) // 2
-                y = 0
-            elif self.position == "bottom":
-                x = (screen.width() - self.width()) // 2
-                y = screen.height() - self.height()
-            elif self.position == "left":
+            # Set size based on position
+            if self.position in ['top', 'bottom']:
+                width = screen.width()
+                height = 40  # Fixed height like Windows taskbar
                 x = 0
-                y = (screen.height() - self.height()) // 2
-            else:  # right
-                x = screen.width() - self.width()
-                y = (screen.height() - self.height()) // 2
+                y = screen.height() - height if self.position == 'bottom' else 0
+            else:
+                width = 40  # Fixed width for vertical orientation
+                height = screen.height()
+                x = screen.width() - width if self.position == 'right' else 0
+                y = 0
             
-            # Move the toolbar
-            self.move(x, y)
+            # Set geometry
+            self.setGeometry(x, y, width, height)
             
             logger.info(f"Positioned toolbar at ({x}, {y})")
         except Exception as e:
             logger.error(f"Error positioning toolbar: {e}", exc_info=True)
+            raise
     
     def _auto_save(self):
         """Auto-save configuration."""

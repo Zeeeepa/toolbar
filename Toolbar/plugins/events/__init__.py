@@ -17,44 +17,22 @@ from PyQt5.QtCore import QObject, pyqtSignal
 from PyQt5.QtGui import QIcon
 
 # Import plugin system
-from Toolbar.core.plugin_system import Plugin
-
-# Import event system
-from Toolbar.plugins.events.core.event_manager import EventManager
-from Toolbar.plugins.events.core.event_system import EventType
-
-# Import UI
-from Toolbar.plugins.events.ui.events_ui import EventsUI
+from Toolbar.core.plugin_system import Plugin, PluginType
 
 # Set up logger
 logger = logging.getLogger(__name__)
 
 class EventsPlugin(Plugin):
-    """Events plugin for the Toolbar application."""
+    """Plugin for event-driven automations."""
     
     def __init__(self):
         """Initialize the Events plugin."""
         super().__init__()
         self._name = "Events"
-        self._description = "Handles system and application events"
         self._version = "1.0.0"
-        self._icon = None
-
-    @property
-    def name(self):
-        return self._name
-
-    @name.setter
-    def name(self, value):
-        self._name = value
-
-    def get_icon(self):
-        if not self._icon:
-            # Return QIcon object instead of string path
-            self._icon = QIcon("Toolbar/plugins/events/assets/events.png")
-        return self._icon
-
-    def initialize(self, config, event_bus, toolbar):
+        self._description = "Create event-driven automations"
+    
+    def initialize(self, config, event_bus=None, toolbar=None):
         """
         Initialize the Events plugin.
         
@@ -238,3 +216,11 @@ class EventsPlugin(Plugin):
     @property
     def description(self) -> str:
         return "Create event-driven automations with a visual node-based flow editor."
+    
+    def get_icon(self):
+        """Get the plugin icon."""
+        return QIcon.fromTheme("preferences-system-time")
+    
+    def get_title(self):
+        """Get the plugin title."""
+        return "Events"

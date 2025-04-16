@@ -16,7 +16,7 @@ from PyQt5.QtWidgets import QWidget
 
 # Import from Toolbar core
 from Toolbar.core.enhanced_plugin_system import ScriptingPlugin, EnhancedPlugin
-from Toolbar.core.plugin_system import Plugin
+from Toolbar.core.plugin_system import Plugin, PluginType
 
 logger = logging.getLogger(__name__)
 
@@ -199,132 +199,23 @@ class ScriptManager:
         return script.run(globals_dict, locals_dict)
 
 class AutoScriptingPlugin(Plugin):
-    """Plugin for automation scripting."""
+    """Plugin for automated scripting functionality."""
     
     def __init__(self):
-        """Initialize the plugin."""
         super().__init__()
-        self.script_manager = None
-        self.ui = None
+        self._name = "AutoScripting"
+        self._version = "1.0.0"
+        self._description = "Automated scripting functionality"
     
     def initialize(self, config, event_bus=None, toolbar=None):
         """Initialize the plugin."""
         super().initialize(config, event_bus, toolbar)
-        
-        # Create script manager
-        scripts_dir = self.get_setting("scripts_dir", os.path.expanduser("~/.toolbar/scripts"))
-        self.script_manager = ScriptManager(scripts_dir)
-        
-        # Create UI if toolbar is provided
-        if toolbar:
-            try:
-                from Toolbar.plugins.autoscripting.ui.script_toolbar_ui import ScriptToolbarUI
-                self.ui = ScriptToolbarUI(self, toolbar)
-            except Exception as e:
-                logger.error(f"Error creating script UI: {e}", exc_info=True)
-        
         return True
-    
-    def activate(self):
-        """Activate the plugin."""
-        super().activate()
-        
-        # Show UI if available
-        if self.ui:
-            self.ui.show()
-        
-        return True
-    
-    def deactivate(self):
-        """Deactivate the plugin."""
-        # Hide UI if available
-        if self.ui:
-            self.ui.hide()
-        
-        return super().deactivate()
-    
-    def cleanup(self):
-        """Clean up resources."""
-        # Clean up UI
-        if self.ui:
-            self.ui.cleanup()
-            self.ui = None
-        
-        return super().cleanup()
-    
-    def get_scripts(self) -> List[Dict[str, Any]]:
-        """Get the list of scripts."""
-        if not self.script_manager:
-            return []
-        
-        return [script.to_dict() for script in self.script_manager.get_scripts()]
-    
-    def get_script(self, script_id: str) -> Optional[Dict[str, Any]]:
-        """Get a specific script."""
-        if not self.script_manager:
-            return None
-        
-        script = self.script_manager.get_script(script_id)
-        return script.to_dict() if script else None
-    
-    def run_script(self, script_id: str, params: Dict[str, Any] = None) -> Any:
-        """Run a script with parameters."""
-        if not self.script_manager:
-            return None
-        
-        # Create globals dictionary with toolbar and plugin manager
-        globals_dict = {
-            "toolbar": self._toolbar,
-            "plugin_manager": self._toolbar.plugin_manager if self._toolbar else None,
-            "config": self._config,
-            "event_bus": self._event_bus,
-            "params": params or {}
-        }
-        
-        # Run the script
-        return self.script_manager.run_script(script_id, globals_dict)
-    
-    def create_script(self, script: Dict[str, Any]) -> bool:
-        """Create a new script."""
-        if not self.script_manager:
-            return False
-        
-        # Create script object
-        script_obj = Script.from_dict(script)
-        
-        # Save the script
-        return self.script_manager.save_script(script_obj)
-    
-    def update_script(self, script_id: str, script: Dict[str, Any]) -> bool:
-        """Update an existing script."""
-        if not self.script_manager:
-            return False
-        
-        # Check if script exists
-        if not self.script_manager.get_script(script_id):
-            return False
-        
-        # Create script object
-        script_obj = Script.from_dict(script)
-        
-        # Ensure ID is correct
-        script_obj.id = script_id
-        
-        # Save the script
-        return self.script_manager.save_script(script_obj)
-    
-    def delete_script(self, script_id: str) -> bool:
-        """Delete a script."""
-        if not self.script_manager:
-            return False
-        
-        return self.script_manager.delete_script(script_id)
     
     def get_icon(self):
-        """Get the icon for the plugin."""
-        from PyQt5.QtGui import QIcon
+        """Get the plugin icon."""
         return QIcon.fromTheme("applications-system")
     
     def get_title(self):
-        """Get the title for the plugin."""
+        """Get the plugin title."""
         return "Scripts"
