@@ -11,30 +11,32 @@ from PyQt5.QtGui import QIcon
 from Toolbar.plugins.github.github.monitor import GitHubMonitor
 from Toolbar.plugins.github.github_manager import GitHubManager
 from Toolbar.plugins.github.github.models import GitHubProject, GitHubNotification
-from Toolbar.core.plugin_system import Plugin
+from Toolbar.core.plugin_system import Plugin, PluginType
 
 logger = logging.getLogger(__name__)
 
 class GitHubPlugin(Plugin):
-    """GitHub integration plugin for the Toolbar application."""
+    """Plugin for GitHub integration."""
     
     def __init__(self):
         """Initialize the GitHub plugin."""
         super().__init__()
         self._name = "GitHub Integration"
-        self._description = "Integrates with GitHub for repository management"
         self._version = "1.0.0"
+        self._description = "GitHub integration and notifications"
         self._icon = None
         self.github_manager = None
         self.github_ui = None
         self.toolbar_button = None
         
-    def initialize(self, config):
+    def initialize(self, config, event_bus=None, toolbar=None):
         """
         Initialize the GitHub plugin.
         
         Args:
             config: Configuration object
+            event_bus: Event bus object
+            toolbar: Toolbar object
         """
         logger.info("Initializing GitHub plugin")
         
@@ -83,7 +85,7 @@ class GitHubPlugin(Plugin):
     def get_icon(self):
         if not self._icon:
             # Return QIcon object instead of string path
-            self._icon = QIcon("Toolbar/plugins/github/assets/github.png")
+            self._icon = QIcon.fromTheme("github")
         return self._icon
     
     def get_title(self):
