@@ -16,10 +16,10 @@ from github import Github
 from typing import List, Dict, Optional, Any, Tuple
 
 # Import from core module structure
-from Toolbar.core.github.models import GitHubProject, GitHubNotification
-from Toolbar.core.github.webhook_manager import WebhookManager
-from Toolbar.core.github.ngrok_manager import NgrokManager
-from Toolbar.core.github.webhook_handler import WebhookHandler
+from Toolbar.plugins.github.github.webhook_manager import WebhookManager
+from Toolbar.plugins.github.github.ngrok_manager import NgrokManager
+from Toolbar.plugins.github.github.webhook_handler import WebhookHandler
+from Toolbar.plugins.github.github.models import GitHubProject, GitHubNotification
 
 # Import PR handler
 from Toolbar.plugins.github.github.pr_handler import PRHandler
