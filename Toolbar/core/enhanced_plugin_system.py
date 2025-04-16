@@ -664,7 +664,7 @@ class EnhancedPluginManager(BasePluginManager):
         discovered_manifests = self.discover_plugins()
         
         # Sort manifests by dependencies
-        sorted_manifests = self._sort_manifests_by_dependencies(discovered_manifests)
+        sorted_manifests = self._sort_plugins_by_dependencies(discovered_manifests)
         
         # Load each plugin
         for manifest in sorted_manifests:
