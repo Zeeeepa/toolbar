@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 setup(
     name="toolbar",
     version="1.0.0",
-    description="A modular taskbar application with plugin support",
+    description="A modular taskbar application with plugin support and audio processing",
     author="Zeeeepa",
     author_email="info@zeeeepa.com",
     packages=find_packages(),
@@ -18,6 +18,11 @@ setup(
         "pyperclip>=1.8.0",
         "python-dotenv>=0.15.0",
         "appdirs>=1.4.4",
+        "pyttsx3>=2.90",
+        "SpeechRecognition>=3.8.1",
+        "webm-muxer>=0.1.0",
+        "sounddevice>=0.4.5",
+        "numpy>=1.21.0",
     ],
     entry_points={
         "console_scripts": [

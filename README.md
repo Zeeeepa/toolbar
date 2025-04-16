@@ -1,6 +1,6 @@
 # Toolbar - Taskbar Application
 
-A modular taskbar application with plugin support, built with Python and PyQt5.
+A modular taskbar application with plugin support and audio processing capabilities, built with Python and PyQt5.
 
 ## Features
 
@@ -9,6 +9,8 @@ A modular taskbar application with plugin support, built with Python and PyQt5.
 - **Plugin System**: Extend functionality with custom plugins
 - **System Tray Integration**: Access the application from the system tray
 - **Start Menu**: Access applications and settings from a start menu
+- **Audio Processing**: Built-in audio recording, encoding, and processing capabilities
+- **Voice Plugins**: Text-to-speech and speech recognition support
 - **Customizable**: Configure the appearance and behavior to your liking
 - **Cross-Platform**: Works on Windows, macOS, and Linux
 
@@ -18,6 +20,12 @@ A modular taskbar application with plugin support, built with Python and PyQt5.
 
 - Python 3.8 or higher
 - pip (Python package manager)
+- Audio dependencies (automatically installed):
+  - pyttsx3 (text-to-speech)
+  - SpeechRecognition (speech recognition)
+  - webm-muxer (audio encoding)
+  - sounddevice (audio capture)
+  - numpy (audio processing)
 
 ### Option 1: Install with pip
 
@@ -77,6 +85,56 @@ The taskbar interface consists of several components:
 - **Application Buttons**: Click to launch applications
 - **System Tray Icon**: Access the application from the system tray
 - **Clock**: Displays the current time
+- **Audio Controls**: Access audio recording and processing features
+
+### Audio Processing Features
+
+The toolbar includes comprehensive audio processing capabilities:
+
+1. **Audio Recording**:
+   - Click the microphone icon to start recording
+   - Supports various audio formats and quality settings
+   - Real-time audio visualization
+
+2. **Audio Encoding**:
+   - WebM audio encoding support
+   - Configurable bitrate and quality settings
+   - Multiple channel support
+
+3. **Audio Processing**:
+   - Slice and trim audio files
+   - Convert between formats
+   - Apply audio effects and filters
+
+4. **Voice Features**:
+   - Text-to-speech capabilities
+   - Speech recognition
+   - Voice command support
+
+Example audio processing code:
+```python
+from toolbar.audio import AudioProcessor
+
+# Initialize audio processor
+processor = AudioProcessor()
+
+# Start recording
+processor.start_recording()
+
+# Stop and save recording
+audio_data = processor.stop_recording()
+
+# Process audio
+processed_audio = processor.process_audio(audio_data, {
+    'format': 'webm',
+    'codec': 'opus',
+    'bitrate': 96000,
+    'channels': 2
+})
+
+# Save to file
+processor.save_audio(processed_audio, 'output.webm')
+```
 
 ### Adding Applications
 
