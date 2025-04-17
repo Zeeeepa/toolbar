@@ -1,11 +1,16 @@
+import sys
+import logging
 from PyQt6.QtWidgets import QApplication
 from .voice.voice_plugin import VoicePlugin
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('WidgetLogger')
+
 def main():
-    """Main entry point for the toolbar application."""
-    app = QApplication([])
+    app = QApplication(sys.argv)
     
-    # Initialize the voice plugin with unified interface
+    # Create and show the voice plugin
     voice_plugin = VoicePlugin()
     voice_plugin.show()
     

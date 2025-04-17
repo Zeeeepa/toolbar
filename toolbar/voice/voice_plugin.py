@@ -1,170 +1,210 @@
 import sys
-import speech_recognition as sr
-import pyttsx3
-from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QPushButton, QLabel, QTextEdit
-from PyQt6.QtCore import QThread, pyqtSignal, Qt
+import os
 import logging
+import keyboard
+import pyperclip
+import pyttsx3
+import speech_recognition as sr
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QComboBox, QLabel
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('WidgetLogger')
 
-class SpeechThread(QThread):
-    """Thread for handling speech recognition."""
-    text_signal = pyqtSignal(str)
-    error_signal = pyqtSignal(str)
-    status_signal = pyqtSignal(str)
+class VoiceThread(QThread):
+    text_ready = pyqtSignal(str)
+    error = pyqtSignal(str)
+    status = pyqtSignal(str)
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self.recognizer = sr.Recognizer()
-        self.running = False
-
+        self.is_running = False
+        
     def run(self):
+        self.is_running = True
         try:
             with sr.Microphone() as source:
-                logger.info("Started speech recognition")
-                self.status_signal.emit("Listening...")
+                self.status.emit("Adjusting for ambient noise...")
                 self.recognizer.adjust_for_ambient_noise(source)
-                logger.info("Adjusted for ambient noise")
+                self.status.emit("Listening...")
                 
-                while self.running:
+                while self.is_running:
                     try:
                         audio = self.recognizer.listen(source, timeout=5)
                         text = self.recognizer.recognize_google(audio)
-                        self.text_signal.emit(text)
+                        self.text_ready.emit(text + " ")
                     except sr.WaitTimeoutError:
                         continue
                     except sr.UnknownValueError:
                         continue
                     except Exception as e:
-                        logger.error(f"Error in speech recognition: {str(e)}")
-                        self.error_signal.emit(str(e))
+                        self.error.emit(str(e))
                         break
-
+                        
         except Exception as e:
-            logger.error(f"Error in microphone setup: {str(e)}")
-            self.error_signal.emit(str(e))
-
-        self.status_signal.emit("Stopped")
-        logger.info("Stopped speech recognition")
+            self.error.emit(str(e))
+        
+        self.is_running = False
+        self.status.emit("Stopped")
 
 class TTSThread(QThread):
-    """Thread for handling text-to-speech."""
-    error_signal = pyqtSignal(str)
-    status_signal = pyqtSignal(str)
-
-    def __init__(self, text):
-        super().__init__()
-        self.text = text
+    error = pyqtSignal(str)
+    status = pyqtSignal(str)
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self.engine = pyttsx3.init()
-
+        self.text = ""
+        self.is_running = False
+        
+    def set_text(self, text):
+        self.text = text
+        
     def run(self):
+        self.is_running = True
         try:
-            self.status_signal.emit("Speaking...")
+            self.status.emit("Reading text...")
             self.engine.say(self.text)
             self.engine.runAndWait()
-            self.status_signal.emit("Stopped")
         except Exception as e:
-            logger.error(f"TTS error: {str(e)}")
-            self.error_signal.emit(str(e))
+            self.error.emit(str(e))
+        
+        self.is_running = False
+        self.status.emit("Stopped")
 
-class VoicePlugin(QMainWindow):
-    """Main window for the voice plugin."""
+class VoicePlugin(QWidget):
     def __init__(self):
         super().__init__()
-        self.speech_thread = None
-        self.tts_thread = None
-        self.init_ui()
+        self.voice_thread = VoiceThread()
+        self.tts_thread = TTSThread()
+        self.setup_ui()
+        self.setup_connections()
         logger.info("VoicePlugin initialized successfully")
 
-    def init_ui(self):
-        """Initialize the user interface."""
-        self.setWindowTitle('Voice Controls')
-        self.setGeometry(100, 100, 400, 500)
-
-        # Create central widget and layout
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        layout = QVBoxLayout(central_widget)
-
-        # Create settings button
-        self.settings_btn = QPushButton('⚙️ Settings')
+    def setup_ui(self):
+        layout = QVBoxLayout()
+        
+        # Settings button
+        self.settings_btn = QPushButton("⚙️ Settings")
         layout.addWidget(self.settings_btn)
-
-        # Create text area
-        self.text_area = QTextEdit()
-        layout.addWidget(self.text_area)
-
-        # Create speech-to-text button
-        self.stt_btn = QPushButton('START Audio To Text')
-        self.stt_btn.clicked.connect(self.toggle_speech_recognition)
+        
+        # Voice settings
+        self.voice_settings = QWidget()
+        voice_layout = QVBoxLayout()
+        
+        # Voice selection
+        voice_label = QLabel("Voice:")
+        self.voice_combo = QComboBox()
+        self.voice_combo.addItems(["Default"] + [voice.name for voice in self.tts_thread.engine.getProperty('voices')])
+        
+        # Speed selection
+        speed_label = QLabel("Speed:")
+        self.speed_combo = QComboBox()
+        self.speed_combo.addItems(["0.5x", "0.75x", "1.0x", "1.25x", "1.5x", "2.0x"])
+        self.speed_combo.setCurrentText("1.0x")
+        
+        voice_layout.addWidget(voice_label)
+        voice_layout.addWidget(self.voice_combo)
+        voice_layout.addWidget(speed_label)
+        voice_layout.addWidget(self.speed_combo)
+        self.voice_settings.setLayout(voice_layout)
+        self.voice_settings.hide()
+        layout.addWidget(self.voice_settings)
+        
+        # Audio to Text button
+        self.stt_btn = QPushButton("START Audio To Text")
         layout.addWidget(self.stt_btn)
-
-        # Create text-to-speech button
-        self.tts_btn = QPushButton('START Text To Audio')
-        self.tts_btn.clicked.connect(self.speak_text)
+        
+        # Text to Audio button
+        self.tts_btn = QPushButton("START Text To Audio")
         layout.addWidget(self.tts_btn)
-
-        # Create status label
-        self.status_label = QLabel('Ready')
+        
+        # Status label
+        self.status_label = QLabel("")
         layout.addWidget(self.status_label)
+        
+        self.setLayout(layout)
+        self.setWindowTitle("Voice Controls")
+        self.setFixedWidth(300)
 
-    def toggle_speech_recognition(self):
-        """Toggle speech recognition on/off."""
-        if self.speech_thread is None or not self.speech_thread.running:
-            # Start speech recognition
-            self.speech_thread = SpeechThread()
-            self.speech_thread.text_signal.connect(self.update_text)
-            self.speech_thread.error_signal.connect(self.handle_error)
-            self.speech_thread.status_signal.connect(self.update_status)
-            self.speech_thread.running = True
-            self.speech_thread.start()
-            self.stt_btn.setText('STOP Audio To Text')
+    def setup_connections(self):
+        # Settings
+        self.settings_btn.clicked.connect(self.toggle_settings)
+        self.voice_combo.currentTextChanged.connect(self.update_voice_settings)
+        self.speed_combo.currentTextChanged.connect(self.update_voice_settings)
+        
+        # Speech to Text
+        self.voice_thread.text_ready.connect(self.handle_text)
+        self.voice_thread.error.connect(self.handle_error)
+        self.voice_thread.status.connect(self.update_status)
+        self.stt_btn.clicked.connect(self.toggle_listening)
+        
+        # Text to Speech
+        self.tts_thread.error.connect(self.handle_error)
+        self.tts_thread.status.connect(self.update_status)
+        self.tts_btn.clicked.connect(self.toggle_reading)
+
+    def toggle_settings(self):
+        if self.voice_settings.isVisible():
+            self.voice_settings.hide()
         else:
-            # Stop speech recognition
-            self.speech_thread.running = False
-            self.speech_thread = None
-            self.stt_btn.setText('START Audio To Text')
+            self.voice_settings.show()
 
-    def speak_text(self):
-        """Convert selected text to speech."""
-        if self.tts_thread is None or not self.tts_thread.isRunning():
-            # Start text-to-speech
-            text = self.text_area.textCursor().selectedText()
-            if not text:
-                text = self.text_area.toPlainText()
-            if text:
-                self.tts_thread = TTSThread(text)
-                self.tts_thread.error_signal.connect(self.handle_error)
-                self.tts_thread.status_signal.connect(self.update_status)
+    def update_voice_settings(self):
+        try:
+            # Update voice
+            voice_name = self.voice_combo.currentText()
+            if voice_name != "Default":
+                for voice in self.tts_thread.engine.getProperty('voices'):
+                    if voice.name == voice_name:
+                        self.tts_thread.engine.setProperty('voice', voice.id)
+                        break
+            
+            # Update speed
+            speed = float(self.speed_combo.currentText().replace('x', ''))
+            self.tts_thread.engine.setProperty('rate', 150 * speed)
+            
+            logger.info("Voice settings updated")
+        except Exception as e:
+            logger.error(f"Failed to update voice settings: {str(e)}")
+
+    def toggle_listening(self):
+        if not self.voice_thread.is_running:
+            self.stt_btn.setText("STOP Audio To Text")
+            self.voice_thread.start()
+        else:
+            self.voice_thread.is_running = False
+            self.stt_btn.setText("START Audio To Text")
+
+    def toggle_reading(self):
+        if not self.tts_thread.is_running:
+            # Get selected text
+            keyboard.send('ctrl+c')  # Simulate Ctrl+C to copy selected text
+            selected_text = pyperclip.paste()
+            
+            if selected_text:
+                self.tts_btn.setText("STOP Text To Audio")
+                self.tts_thread.set_text(selected_text)
                 self.tts_thread.start()
-                self.tts_btn.setText('STOP Text To Audio')
+            else:
+                self.update_status("No text selected")
         else:
-            # Stop text-to-speech
-            self.tts_thread.terminate()
-            self.tts_thread = None
-            self.tts_btn.setText('START Text To Audio')
+            self.tts_thread.is_running = False
+            self.tts_thread.engine.stop()
+            self.tts_btn.setText("START Text To Audio")
 
-    def update_text(self, text):
-        """Update the text area with recognized speech."""
-        cursor = self.text_area.textCursor()
-        cursor.insertText(text + " ")
-        self.text_area.setTextCursor(cursor)
+    def handle_text(self, text):
+        # Type the recognized text at cursor position
+        keyboard.write(text)
 
     def handle_error(self, error):
-        """Handle errors from speech recognition or TTS."""
-        self.status_label.setText(f"Error: {error}")
         logger.error(f"Error: {error}")
+        self.update_status(f"Error: {error}")
+        
+        # Reset buttons
+        self.stt_btn.setText("START Audio To Text")
+        self.tts_btn.setText("START Text To Audio")
 
     def update_status(self, status):
-        """Update the status label."""
         self.status_label.setText(status)
-
-    def closeEvent(self, event):
-        """Handle window close event."""
-        if self.speech_thread and self.speech_thread.running:
-            self.speech_thread.running = False
-        if self.tts_thread and self.tts_thread.isRunning():
-            self.tts_thread.terminate()
-        super().closeEvent(event)
+        logger.info(status)
