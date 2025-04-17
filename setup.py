@@ -6,8 +6,11 @@ setup(
     packages=find_packages(),
     install_requires=[
         "PyQt6",
-        "SpeechRecognition",
         "pyttsx3",
+        "SpeechRecognition",
+        "keyboard",
+        "pyperclip",
+        "pyaudio",
     ],
     entry_points={
         "console_scripts": [
