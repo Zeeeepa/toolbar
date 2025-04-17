@@ -1,3 +1,3 @@
-from .voice_plugin import VoiceWidget
+from .voice_plugin import VoicePlugin
 
-__all__ = ['VoiceWidget']
+__all__ = ['VoicePlugin']
