@@ -4,9 +4,12 @@ from .voice.voice_plugin import VoicePlugin
 
 def main():
     app = QApplication(sys.argv)
-    widget = VoicePlugin()
-    widget.show()
-    sys.exit(app.exec())
+    
+    # Create and show the voice plugin
+    voice_plugin = VoicePlugin()
+    voice_plugin.show()
+    
+    return app.exec()
 
 if __name__ == "__main__":
     main()
